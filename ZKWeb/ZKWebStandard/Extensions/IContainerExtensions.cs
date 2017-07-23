@@ -8,16 +8,29 @@ using ZKWebStandard.Ioc;
 
 namespace ZKWebStandard.Extensions {
 	/// <summary>
-	/// IContainer extension methods
+	/// IContainer extension methods<br/>
+	/// 容器的扩展函数<br/>
 	/// </summary>
 	public static class IContainerExtensions {
 		/// <summary>
-		/// Build factory from original factory and reuse type
+		/// Build factory from original factory and reuse type<br/>
+		/// 根据原工厂函数和重用类型构建新的工厂函数<br/>
 		/// </summary>
 		/// <param name="container">IoC container</param>
 		/// <param name="originalFactory">Original factory</param>
 		/// <param name="reuseType">Reuse type</param>
 		/// <returns></returns>
+		/// <example>
+		/// <code language="cs">
+		/// class TestData { }
+		/// 
+		/// var container = new Container();
+		/// var factoryA = container.BuildFactory(() =&gt; new TestData(), ReuseType.Transient);
+		/// // !object.ReferenceEquals(factoryA(), factoryA())
+		/// var factoryB = container.BuildFactory(() =&gt; new TestData(), ReuseType.Singleton);
+		/// // object.ReferenceEquals(factoryB(), factoryB())
+		/// </code>
+		/// </example>
 		public static Func<object> BuildFactory(
 			this IContainer container, Func<object> originalFactory, ReuseType reuseType) {
 			if (reuseType == ReuseType.Transient) {
@@ -45,24 +58,50 @@ namespace ZKWebStandard.Extensions {
 		}
 
 		/// <summary>
-		/// Cache for type and it's original factory
+		/// Cache for type and it's original factory<br/>
+		/// 缓存类型和它的原始工厂函数<br/>
 		/// </summary>
 		private readonly static ConcurrentDictionary<Type, Func<object>> TypeFactorysCache =
 			new ConcurrentDictionary<Type, Func<object>>();
 
 		/// <summary>
-		/// Build factory from type and reuse type
+		/// Build factory from type and reuse type<br/>
+		/// 根据类型和重用类型构建工厂函数<br/>
 		/// </summary>
 		/// <param name="container">IoC container</param>
 		/// <param name="type">The type</param>
 		/// <param name="reuseType">Reuse type</param>
 		/// <returns></returns>
+		/// <example>
+		/// <code language="cs">
+		/// class TestData { }
+		/// 
+		/// class TestInjection {
+		/// 	public TestData Data { get; set; }
+		/// 	public TestInjection(TestData data) { Data = data; }
+		/// }
+		/// 
+		/// IContainer container = new Container();
+		/// container.RegisterMany&lt;TestData&gt;();
+		/// var factory = container.BuildFactory(typeof(TestInjection), ReuseType.Transient);
+		/// var testInjection = (TestInjection)factory();
+		/// </code>
+		/// </example>
 		public static Func<object> BuildFactory(
 			this IContainer container, Type type, ReuseType reuseType) {
 			var typeFactor = TypeFactorysCache.GetOrAdd(type, t => {
 				// Support constructor dependency injection
+				// First detect Inject attribute, then use the constructor that have most parameters	
 				var argumentExpressions = new List<Expression>();
-				var constructor = t.GetConstructors().Where(c => c.IsPublic).FirstOrDefault();
+				var constructors = t.GetConstructors();
+				var constructor = constructors.FirstOrDefault(
+					c => c.GetAttribute<InjectAttribute>() != null);
+				if (constructor == null) {
+					constructor = constructors
+						.Where(c => c.IsPublic)
+						.OrderByDescending(c => c.GetParameters().Length)
+						.FirstOrDefault();
+				}
 				if (constructor == null) {
 					throw new ArgumentException(
 						$"Type {type} should have atleast one public constructor");
@@ -73,14 +112,14 @@ namespace ZKWebStandard.Extensions {
 					if (parameterTypeInfo.IsGenericType &&
 						parameterTypeInfo.GetGenericTypeDefinition() == typeof(IEnumerable<>)) {
 						argumentExpressions.Add(Expression.Call(
-							Expression.Constant(container), "ResolveMany",
+							Expression.Constant(container), nameof(IContainer.ResolveMany),
 							parameterTypeInfo.GetGenericArguments(),
 							Expression.Constant(null)));
 					} else {
 						argumentExpressions.Add(Expression.Call(
-							Expression.Constant(container), "Resolve",
+							Expression.Constant(container), nameof(IContainer.Resolve),
 							new[] { parameterType },
-							Expression.Constant(IfUnresolved.Throw),
+							Expression.Constant(IfUnresolved.ReturnDefault),
 							Expression.Constant(null)));
 					}
 				}

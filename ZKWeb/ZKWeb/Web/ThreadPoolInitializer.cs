@@ -2,13 +2,16 @@
 
 namespace ZKWeb.Web {
 	/// <summary>
-	/// Thread pool initializer
+	/// Thread pool initializer<br/>
+	/// 初始化线程池<br/>
 	/// </summary>
-	internal static class ThreadPoolInitializer {
+	/// <seealso cref="Server.IApplication"/>
+	public class ThreadPoolInitializer {
 		/// <summary>
-		/// Initialize thread pool
+		/// Initialize thread pool<br/>
+		/// 初始化线程池<br/>
 		/// </summary>
-		internal static void Initialize() {
+		internal protected virtual void Initialize() {
 #if NETCORE
 			// SetMaxThreads is unsupported in .Net Core
 			// But you can use configuration file, see

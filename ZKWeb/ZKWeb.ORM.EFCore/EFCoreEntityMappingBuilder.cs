@@ -1,7 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.FastReflection;
@@ -9,45 +8,68 @@ using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
 using ZKWeb.Database;
+using ZKWeb.Logging;
 using ZKWebStandard.Extensions;
 
 namespace ZKWeb.ORM.EFCore {
 	/// <summary>
-	/// Entity Framework Core entity mapping builder
+	/// Entity Framework Core entity mapping builder<br/>
+	/// Entity Framework Core的实体映射构建器<br/>
 	/// </summary>
 	/// <typeparam name="T">Entity type</typeparam>
-	internal class EFCoreEntityMappingBuilder<T> : IEntityMappingBuilder<T>
+	public class EFCoreEntityMappingBuilder<T> :
+		IEntityMappingBuilder<T>
 		where T : class, IEntity {
 		/// <summary>
-		/// Entity Framework Core type builder
+		/// Entity Framework's native builder<br/>
+		/// 原生的EF实体映射构建器<br/>
 		/// </summary>
-		private EntityTypeBuilder<T> Builder { get; set; }
+		public EntityTypeBuilder<T> Builder { get; protected set; }
 		/// <summary>
-		/// ORM name
+		/// ORM name<br/>
+		/// ORM名称<br/>
 		/// </summary>
 		public string ORM { get { return EFCoreDatabaseContext.ConstORM; } }
+		/// <summary>
+		/// Custom table name<br/>
+		/// 自定义表名<br/>
+		/// </summary>
+		protected string CustomTableName { get; set; }
 
 		/// <summary>
-		/// Initialize
+		/// Initialize<br/>
+		/// 初始化<br/>
 		/// </summary>
 		/// <param name="builder">Model builder</param>
 		public EFCoreEntityMappingBuilder(
 			ModelBuilder builder) {
 			Builder = builder.Entity<T>();
-			// Set table name with registered handlers
-			var tableName = typeof(T).Name;
-			var handlers = Application.Ioc.ResolveMany<IDatabaseInitializeHandler>();
-			handlers.ForEach(h => h.ConvertTableName(ref tableName));
-			Builder = Builder.ToTable(tableName);
 			// Configure with registered providers
 			var providers = Application.Ioc.ResolveMany<IEntityMappingProvider<T>>();
 			foreach (var provider in providers) {
 				provider.Configure(this);
 			}
+			// Set table name with registered handlers
+			var tableName = CustomTableName ?? typeof(T).Name;
+			var handlers = Application.Ioc.ResolveMany<IDatabaseInitializeHandler>();
+			foreach (var handler in handlers) {
+				handler.ConvertTableName(ref tableName);
+			}
+			Builder = Builder.ToTable(tableName);
 		}
 
 		/// <summary>
-		/// Specify the primary key for this entity
+		/// Specify the custom table name<br/>
+		/// 指定自定义表名<br/>
+		/// </summary>
+		/// <param name="tableName"></param>
+		public void TableName(string tableName) {
+			CustomTableName = tableName;
+		}
+
+		/// <summary>
+		/// Specify the primary key for this entity<br/>
+		/// 指定实体的主键<br/>
 		/// </summary>
 		public void Id<TPrimaryKey>(
 			Expression<Func<T, TPrimaryKey>> memberExpression,
@@ -64,7 +86,8 @@ namespace ZKWeb.ORM.EFCore {
 		}
 
 		/// <summary>
-		/// Create a member mapping
+		/// Create a member mapping<br/>
+		/// 创建成员映射<br/>
 		/// </summary>
 		public void Map<TMember>(
 			Expression<Func<T, TMember>> memberExpression,
@@ -99,17 +122,22 @@ namespace ZKWeb.ORM.EFCore {
 				propertyBuilder = propertyBuilder.HasColumnType(options.CustomSqlType);
 			}
 			if (options.WithSerialization == true) {
-				throw new NotSupportedException(
+				// log error only, some functions may not work
+				var logManager = Application.Ioc.Resolve<LogManager>();
+				logManager.LogError(
 					"Entity framework core not support custom type mapping yet, " +
-					"see https://github.com/aspnet/EntityFramework/issues/242");
+					"see https://github.com/aspnet/EntityFramework/issues/242 " +
+					$"expression: {memberExpression}");
 			}
 		}
 
 		/// <summary>
-		/// Use navigation property name from options, or
-		/// Automatic determine navigation property name on the other side
+		/// Use navigation property name from options, or<br/>
+		/// Automatic determine navigation property name on the other side<br/>
+		/// 从选项获取导航属性名称<br/>
+		/// 或自动检测另一端的导航属性<br/>
 		/// </summary>
-		private string GetNavigationPropertyName<TOther, TNavigationType>(
+		protected string GetNavigationPropertyName<TOther, TNavigationType>(
 			EntityMappingOptions options) {
 			if (!string.IsNullOrEmpty(options.Navigation)) {
 				return options.Navigation;
@@ -121,7 +149,8 @@ namespace ZKWeb.ORM.EFCore {
 		}
 
 		/// <summary>
-		/// Create a reference to another entity, this is a many-to-one relationship.
+		/// Create a reference to another entity, this is a many-to-one relationship.<br/>
+		/// 创建到其他实体的映射, 这是多对一的关系<br/>
 		/// </summary>
 		public void References<TOther>(
 			Expression<Func<T, TOther>> memberExpression,
@@ -150,7 +179,8 @@ namespace ZKWeb.ORM.EFCore {
 		}
 
 		/// <summary>
-		/// Maps a collection of entities as a one-to-many relationship.
+		/// Maps a collection of entities as a one-to-many relationship.<br/>
+		/// 创建到实体集合的映射, 这是一对多的关系<br/>
 		/// </summary>
 		public void HasMany<TChild>(
 			Expression<Func<T, IEnumerable<TChild>>> memberExpression,
@@ -170,15 +200,19 @@ namespace ZKWeb.ORM.EFCore {
 		}
 
 		/// <summary>
-		/// Maps a collection of entities as a many-to-many relationship.
+		/// Maps a collection of entities as a many-to-many relationship.<br/>
+		/// 创建到实体集合的映射, 这是多对多的关系<br/>
 		/// </summary>
 		public void HasManyToMany<TChild>(
 			Expression<Func<T, IEnumerable<TChild>>> memberExpression,
 			EntityMappingOptions options)
 			where TChild : class {
-			throw new NotSupportedException(
+			// log error only, some functions may not work
+			var logManager = Application.Ioc.Resolve<LogManager>();
+			logManager.LogError(
 				"Entity framework core not support many-to-many yet, " +
-				"see https://github.com/aspnet/EntityFramework/issues/1368");
+				"see https://github.com/aspnet/EntityFramework/issues/1368 " +
+				$"expression: {memberExpression}");
 		}
 	}
 }

@@ -2,18 +2,22 @@
 using Microsoft.AspNetCore.Http;
 using ZKWebStandard.Web;
 using System;
+using System.Diagnostics;
 
 namespace ZKWeb.Hosting.AspNetCore {
 	/// <summary>
-	/// Http response wrapper for Asp.Net Core
+	/// Http response wrapper for Asp.Net Core<br/>
+	/// Asp.Net Core的Http回应包装类<br/>
 	/// </summary>
 	internal class CoreHttpResponseWrapper : IHttpResponse {
 		/// <summary>
-		/// Parent http context
+		/// Parent http context<br/>
+		/// 所属的Http上下文<br/>
 		/// </summary>
 		protected CoreHttpContextWrapper ParentContext { get; set; }
 		/// <summary>
-		/// Original http response
+		/// Original http response<br/>
+		/// 原始的Http回应<br/>
 		/// </summary>
 		protected HttpResponse CoreResponse { get; set; }
 
@@ -59,6 +63,7 @@ namespace ZKWeb.Hosting.AspNetCore {
 			CoreResponse.Redirect(url, permanent);
 			End();
 		}
+		[DebuggerNonUserCode]
 		public void End() {
 			// Fix kesterl 1.0.0 304 => 502 error
 			// See https://github.com/aspnet/KestrelHttpServer/issues/952
@@ -73,7 +78,8 @@ namespace ZKWeb.Hosting.AspNetCore {
 		}
 
 		/// <summary>
-		/// Initialize
+		/// Initialize<br/>
+		/// 初始化<br/>
 		/// </summary>
 		/// <param name="parentContext">Parent http context</param>
 		/// <param name="coreResponse">Original http response</param>

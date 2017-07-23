@@ -1,27 +1,26 @@
 ﻿#if !NETCORE
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Reflection;
 using ZKWebStandard.Extensions;
 
 namespace ZKWeb.Plugin.AssemblyLoaders {
 	/// <summary>
-	/// Assembly loader for .Net Framework
+	/// Assembly loader for .Net Framework<br/>
+	/// .Net Framework使用的程序集加载器<br/>
 	/// </summary>
-	internal class NetAssemblyLoader : IAssemblyLoader {
+	internal class NetAssemblyLoader : AssemblyLoaderBase {
 		/// <summary>
-		/// Possible assembly name suffixes
-		/// Use to load assemblies by short name
+		/// Possible assembly name suffixes<br/>
+		/// Use to load assemblies by short name<br/>
+		/// 预置的程序集名称后续<br/>
+		/// 用于支持根据短名称加载程序集<br/>
 		/// </summary>
 		private IList<string> PossibleAssemblyNameSuffixes { get; set; }
-		/// <summary>
-		/// Replacement assemblies
-		/// </summary>
-		private IDictionary<string, string> ReplacementAssemblies { get; set; }
 
 		/// <summary>
-		/// Initialize
+		/// Initialize<br/>
+		/// 初始化<br/>
 		/// </summary>
 		public NetAssemblyLoader() {
 			AppDomain.CurrentDomain.AssemblyResolve -= AssemblyResolver;
@@ -30,68 +29,71 @@ namespace ZKWeb.Plugin.AssemblyLoaders {
 				", Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a",
 				", Version=4.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35"
 			};
-			ReplacementAssemblies = new Dictionary<string, string>() {
-				{ "System.FastReflection", "FastReflection" },
-				{ "System.Drawing", "ZKWeb.System.Drawing" }
-			};
-		}
-
-		/// <summary>
-		/// Get loaded assemblies
-		/// Except dynamic assemblies
-		/// </summary>
-		public IList<Assembly> GetLoadedAssemblies() {
-			return AppDomain.CurrentDomain.GetAssemblies()
-				.Where(assembly => !assembly.IsDynamic).ToList();
-		}
-
-		/// <summary>
-		/// Load assembly by name
-		/// </summary>
-		public Assembly Load(string name) {
-			// Replace name if replacement exists
-			name = ReplacementAssemblies.GetOrDefault(name, name);
-			try {
-				// Try load directly
-				return Load(new AssemblyName(name));
-			} catch {
-				// If load failed, add suffixes and try again
-				foreach (var suffix in PossibleAssemblyNameSuffixes) {
-					try {
-						return Load(new AssemblyName(name + suffix));
-					} catch {
-					}
-				}
-				throw;
+			foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies()) {
+				HandleLoadedAssembly(assembly);
 			}
 		}
 
 		/// <summary>
-		/// Load assembly by name object
+		/// Load assembly by name<br/>
+		/// 根据名称加载程序集<br/>
 		/// </summary>
-		public Assembly Load(AssemblyName assemblyName) {
-			return Assembly.Load(assemblyName);
+		public override Assembly Load(string name) {
+			// Replace name if replacement exists
+			name = ReplacementAssemblies.GetOrDefault(name, name);
+			Assembly assembly = null;
+			try {
+				// Try load directly
+				assembly = Load(new AssemblyName(name));
+			} catch {
+				// If load failed, add suffixes and try again
+				foreach (var suffix in PossibleAssemblyNameSuffixes) {
+					try {
+						assembly = Load(new AssemblyName(name + suffix));
+						break;
+					} catch {
+					}
+				}
+				if (assembly == null) {
+					throw;
+				}
+			}
+			return HandleLoadedAssembly(assembly);
 		}
 
 		/// <summary>
-		/// Load assembly from it's binary contents
+		/// Load assembly by name object<br/>
+		/// 根据名称对象加载程序集<br/>
 		/// </summary>
-		public Assembly Load(byte[] rawAssembly) {
-			return Assembly.Load(rawAssembly);
+		public override Assembly Load(AssemblyName assemblyName) {
+			var assembly = Assembly.Load(assemblyName);
+			return HandleLoadedAssembly(assembly);
 		}
 
 		/// <summary>
-		/// Load assembly from file path
+		/// Load assembly from it's binary contents<br/>
+		/// 根据二进制内容加载程序集<br/>
 		/// </summary>
-		public Assembly LoadFile(string path) {
-			return Assembly.LoadFile(path);
+		public override Assembly Load(byte[] rawAssembly) {
+			var assembly = Assembly.Load(rawAssembly);
+			return HandleLoadedAssembly(assembly);
 		}
 
 		/// <summary>
-		/// Assembly resolve event handler
+		/// Load assembly from file path<br/>
+		/// 根据文件路径加载程序集<br/>
+		/// </summary>
+		public override Assembly LoadFile(string path) {
+			var assembly = Assembly.LoadFile(path);
+			return HandleLoadedAssembly(assembly);
+		}
+
+		/// <summary>
+		/// Assembly resolve event handler<br/>
+		/// 程序集解决事件的处理器<br/>
 		/// </summary>
 		/// <returns></returns>
-		protected Assembly AssemblyResolver(object sender, ResolveEventArgs args) {
+		private Assembly AssemblyResolver(object sender, ResolveEventArgs args) {
 			// If assembly already loaded, return the loaded instance
 			var requireName = new AssemblyName(args.Name);
 			foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies()) {

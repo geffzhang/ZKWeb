@@ -6,16 +6,34 @@ using ZKWeb.Server;
 
 namespace ZKWeb.Database {
 	/// <summary>
-	/// Database manager
+	/// Database manager<br/>
+	/// 数据库管理器<br/>
 	/// </summary>
+	/// <example>
+	/// <code>
+	/// var databaseManager = Application.Ioc.Resolve&lt;DatabaseManager&gt;();
+	///	using (var context = databaseManager.CreateContext()) {
+	///		var data = new ExampleTable() {
+	///			Name = "test",
+	///			CreateTime = DateTime.UtcNow,
+	///			Deleted = false
+	///		};
+	///		context.Save(ref data);
+	/// }
+	/// </code>
+	/// </example>
+	/// <seealso cref="IDatabaseContext"/>
+	/// <seealso cref="IDatabaseContextFactory"/>
 	public class DatabaseManager {
 		/// <summary>
-		/// Default database context factory
+		/// Default database context factory<br/>
+		/// 默认的数据库上下文生成器<br/>
 		/// </summary>
 		protected virtual IDatabaseContextFactory DefaultContextFactory { get; set; }
 
 		/// <summary>
-		/// Create database context from the default factory
+		/// Create database context from the default factory<br/>
+		/// 使用默认的生成器创建数据库上下文<br/>
 		/// </summary>
 		/// <returns></returns>
 		public virtual IDatabaseContext CreateContext() {
@@ -23,7 +41,8 @@ namespace ZKWeb.Database {
 		}
 
 		/// <summary>
-		/// Create database context factory from the given parameters
+		/// Create database context factory from the given parameters<br/>
+		/// 根据传入的参数创建数据库上下文生成器<br/>
 		/// </summary>
 		/// <param name="orm">Object relational mapper</param>
 		/// <param name="database">Database name</param>
@@ -53,13 +72,13 @@ namespace ZKWeb.Database {
 		}
 
 		/// <summary>
-		/// Initialize database manager
+		/// Initialize database manager<br/>
+		/// 初始化数据库管理器<br/>
 		/// </summary>
-		internal static void Initialize() {
+		internal protected virtual void Initialize() {
 			var configManager = Application.Ioc.Resolve<WebsiteConfigManager>();
 			var config = configManager.WebsiteConfig;
-			var databaseManager = Application.Ioc.Resolve<DatabaseManager>();
-			databaseManager.DefaultContextFactory = CreateContextFactor(
+			DefaultContextFactory = CreateContextFactor(
 				config.ORM, config.Database, config.ConnectionString);
 		}
 	}

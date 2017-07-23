@@ -3,11 +3,13 @@ using System.Runtime.InteropServices;
 
 namespace ZKWebStandard.Utils {
 	/// <summary>
-	/// Platform utility functions
+	/// Platform utility functions<br/>
+	/// 平台的工具函数<br/>
 	/// </summary>
 	public static class PlatformUtils {
 		/// <summary>
-		/// Running platform is linux or mac
+		/// Running platform is linux or mac<br/>
+		/// 运行的系统是否Linux或Mac<br/>
 		/// </summary>
 		private static bool IsLinuxOrMac = false;
 
@@ -22,17 +24,29 @@ namespace ZKWebStandard.Utils {
 		}
 
 		/// <summary>
-		/// Check is running on linux or mac
+		/// Check is running on linux or mac<br/>
+		/// 判断运行的系统是否Linux或Mac<br/>
 		/// </summary>
 		/// <returns></returns>
+		/// <example>
+		/// <code language="cs">
+		/// var isOnUnix = PlatformUtils.RunningOnUnix();
+		/// </code>
+		/// </example>
 		public static bool RunningOnUnix() {
 			return IsLinuxOrMac;
 		}
 
 		/// <summary>
-		/// Check is running on windows
+		/// Check is running on windows<br/>
+		/// 判断运行的系统是否Windows<br/>
 		/// </summary>
 		/// <returns></returns>
+		/// <example>
+		/// <code language="cs">
+		/// var isOnWindows = PlatformUtils.RunningOnWindows();
+		/// </code>
+		/// </example>
 		public static bool RunningOnWindows() {
 			return !IsLinuxOrMac;
 		}

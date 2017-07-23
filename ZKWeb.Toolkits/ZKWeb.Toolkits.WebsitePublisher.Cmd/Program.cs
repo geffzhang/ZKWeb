@@ -12,6 +12,9 @@ namespace ZKWeb.Toolkits.WebsitePublisher.Cmd {
 				{ "r|root=", "The source website root directory", r => parameters.WebRoot = r },
 				{ "n|name=", "The output name", n => parameters.OutputName = n },
 				{ "o|output=", "The output directory", d => parameters.OutputDirectory = d },
+				{ "x|ignore=", "Ignore pattern in regex", x => parameters.IgnorePattern = x },
+				{ "c|configuration=", "Which configuration to publish",x => parameters.Configuration = x },
+				{ "f|framework=", "Which framework to publish", x => parameters.Framework = x },
 				{ "h|help", "Show this message and exit", h => showHelp = (h != null) }
 			};
 			try {

@@ -4,11 +4,13 @@ using ZKWebStandard.Web;
 
 namespace ZKWeb.Hosting.AspNetCore {
 	/// <summary>
-	/// Posted file wrapper for Asp.Net Core
+	/// Posted file wrapper for Asp.Net Core<br/>
+	/// Asp.net Core的提交文件包装类<br/>
 	/// </summary>
 	internal class CoreHttpPostedFileWrapper : IHttpPostedFile {
 		/// <summary>
-		/// Form file object
+		/// Form file object<br/>
+		/// 表单文件对象<br/>
 		/// </summary>
 		protected IFormFile CoreFile { get; set; }
 
@@ -27,7 +29,8 @@ namespace ZKWeb.Hosting.AspNetCore {
 		}
 
 		/// <summary>
-		/// Initialize
+		/// Initialize<br/>
+		/// 初始化<br/>
 		/// </summary>
 		/// <param name="coreFile">Form file object</param>
 		public CoreHttpPostedFileWrapper(IFormFile coreFile) {

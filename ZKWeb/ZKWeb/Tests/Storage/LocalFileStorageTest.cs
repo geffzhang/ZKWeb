@@ -3,6 +3,7 @@ using System.Linq;
 using System.Text;
 using ZKWeb.Storage;
 using ZKWebStandard.Testing;
+using ZKWebStandard.Utils;
 
 namespace ZKWeb.Tests.Storage {
 	[Tests]
@@ -16,7 +17,10 @@ namespace ZKWeb.Tests.Storage {
 				Assert.IsTrue(fileEntry.Exists);
 				Assert.IsTrue(!string.IsNullOrEmpty(fileEntry.Filename));
 				Assert.IsTrue(!string.IsNullOrEmpty(fileEntry.UniqueIdentifier));
-				Assert.IsTrue(fileEntry.CreationTimeUtc != DateTime.MinValue);
+				if (PlatformUtils.RunningOnWindows()) {
+					// on unix there no file creation time
+					Assert.IsTrue(fileEntry.CreationTimeUtc != DateTime.MinValue);
+				}
 				Assert.IsTrue(fileEntry.LastAccessTimeUtc != DateTime.MinValue);
 				Assert.IsTrue(fileEntry.LastWriteTimeUtc != DateTime.MinValue);
 				Assert.Equals(fileEntry.ReadAllText(), "test 1 in plugin b");
@@ -83,6 +87,44 @@ namespace ZKWeb.Tests.Storage {
 				directoryEntry.Delete();
 				Assert.IsTrue(!directoryEntry.EnumerateFiles().Any());
 				Assert.IsTrue(!directoryEntry.EnumerateDirectories().Any());
+			}
+		}
+
+		public void ReadAllText_WriteAllText() {
+			using (var layout = new TestDirectoryLayout()) {
+				var fileStorage = Application.Ioc.Resolve<IFileStorage>();
+				var fileEntry = fileStorage.GetStorageFile("static", "__test_text.txt");
+				fileEntry.WriteAllText("test write text");
+
+				fileEntry = fileStorage.GetStorageFile("static", "__test_text.txt");
+				Assert.Equals(fileEntry.ReadAllText(), "test write text");
+				fileEntry.Delete();
+			}
+		}
+
+		public void AppendAllText() {
+			using (var layout = new TestDirectoryLayout()) {
+				var fileStorage = Application.Ioc.Resolve<IFileStorage>();
+				var fileEntry = fileStorage.GetStorageFile("static", "__test_text.txt");
+				fileEntry.WriteAllText("test write text");
+				fileEntry.AppendAllText(" and test append");
+
+				fileEntry = fileStorage.GetStorageFile("static", "__test_text.txt");
+				Assert.Equals(fileEntry.ReadAllText(), "test write text and test append");
+				fileEntry.Delete();
+			}
+		}
+
+		public void ReadAllBytes_WriteAllBytes() {
+			using (var layout = new TestDirectoryLayout()) {
+				var fileStorage = Application.Ioc.Resolve<IFileStorage>();
+				var fileEntry = fileStorage.GetStorageFile("static", "__test_bytes.txt");
+				fileEntry.WriteAllBytes(new byte[] { 0x99, 0x0, 0x88, 0x0a, 0x0a });
+
+				fileEntry = fileStorage.GetStorageFile("static", "__test_bytes.txt");
+				var readBytes = fileEntry.ReadAllBytes();
+				Assert.IsTrueWith(readBytes.SequenceEqual(new byte[] { 0x99, 0x0, 0x88, 0x0a, 0x0a }), readBytes);
+				fileEntry.Delete();
 			}
 		}
 	}

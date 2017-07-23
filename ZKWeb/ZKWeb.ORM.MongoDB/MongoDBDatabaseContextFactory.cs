@@ -4,21 +4,26 @@ using ZKWeb.Database;
 
 namespace ZKWeb.ORM.MongoDB {
 	/// <summary>
-	/// MongoDB database context factory
-	/// MongoDB doesn't need to migrate database scheme
+	/// MongoDB database context factory<br/>
+	/// MongoDB doesn't need to migrate database scheme<br/>
+	/// MongoDB的数据库上下文生成器<br/>
+	/// MongoDB不需要迁移数据库<br/>
 	/// </summary>
-	internal class MongoDBDatabaseContextFactory : IDatabaseContextFactory {
+	public class MongoDBDatabaseContextFactory : IDatabaseContextFactory {
 		/// <summary>
-		/// Connection url
+		/// Connection url<br/>
+		/// 连接字符串<br/>
 		/// </summary>
-		private MongoUrl ConnectionUrl { get; set; }
+		protected MongoUrl ConnectionUrl { get; set; }
 		/// <summary>
-		/// MongoDB entity mappings
+		/// MongoDB entity mappings<br/>
+		/// MongoDB的实体映射<br/>
 		/// </summary>
-		private MongoDBEntityMappings Mappings { get; set; }
+		protected MongoDBEntityMappings Mappings { get; set; }
 
 		/// <summary>
-		/// Initialize
+		/// Initialize<br/>
+		/// 初始化<br/>
 		/// </summary>
 		/// <param name="database">Database type</param>
 		/// <param name="connectionString">Connection string</param>
@@ -34,7 +39,8 @@ namespace ZKWeb.ORM.MongoDB {
 		}
 
 		/// <summary>
-		/// Create database context
+		/// Create database context<br/>
+		/// 创建数据库上下文<br/>
 		/// </summary>
 		/// <returns></returns>
 		public IDatabaseContext CreateContext() {

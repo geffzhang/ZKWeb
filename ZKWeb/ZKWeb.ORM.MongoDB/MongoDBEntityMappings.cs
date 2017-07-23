@@ -7,16 +7,19 @@ using ZKWebStandard.Utils;
 
 namespace ZKWeb.ORM.MongoDB {
 	/// <summary>
-	/// MongoDB entity mappings
+	/// MongoDB entity mappings<br/>
+	/// MongoDB的实体映射集合<br/>
 	/// </summary>
-	internal class MongoDBEntityMappings {
+	public class MongoDBEntityMappings {
 		/// <summary>
-		/// Type to mapping definition
+		/// Type to mapping definition<br/>
+		/// 类型到映射的定义<br/>
 		/// </summary>
-		private ConcurrentDictionary<Type, IMongoDBEntityMapping> Mappings { get; set; }
+		protected ConcurrentDictionary<Type, IMongoDBEntityMapping> Mappings { get; set; }
 
 		/// <summary>
-		/// Initialize
+		/// Initialize<br/>
+		/// 初始化<br/>
 		/// </summary>
 		/// <param name="connectionUrl">Connection url</param>
 		public MongoDBEntityMappings(MongoUrl connectionUrl) {
@@ -24,20 +27,22 @@ namespace ZKWeb.ORM.MongoDB {
 			// Build entity mappings
 			var handlers = Application.Ioc.ResolveMany<IDatabaseInitializeHandler>();
 			var providers = Application.Ioc.ResolveMany<IEntityMappingProvider>();
-			var groupedProviders = providers.GroupBy(p =>
-				ReflectionUtils.GetGenericArguments(
-				p.GetType(), typeof(IEntityMappingProvider<>))[0]);
+			var entityTypes = providers
+				.Select(p => ReflectionUtils.GetGenericArguments(
+					p.GetType(), typeof(IEntityMappingProvider<>))[0])
+				.Distinct().ToList();
 			var client = new MongoClient(connectionUrl);
 			var database = client.GetDatabase(connectionUrl.DatabaseName);
-			foreach (var group in groupedProviders) {
-				var builder = (IMongoDBEntityMapping)Activator.CreateInstance(
-					typeof(MongoDBEntityMappingBuilder<>).MakeGenericType(group.Key), database);
-				Mappings[group.Key] = builder;
+			foreach (var entityType in entityTypes) {
+				var builder = Activator.CreateInstance(
+					typeof(MongoDBEntityMappingBuilder<>).MakeGenericType(entityType), database);
+				Mappings[entityType] = (IMongoDBEntityMapping)builder;
 			}
 		}
 
 		/// <summary>
-		/// Get mapping for entity type
+		/// Get mapping for entity type<br/>
+		/// 获取实体类型对应的映射<br/>
 		/// </summary>
 		/// <param name="type">Entity type</param>
 		/// <returns></returns>

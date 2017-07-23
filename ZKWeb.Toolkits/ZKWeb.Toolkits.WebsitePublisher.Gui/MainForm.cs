@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using ZKWeb.Toolkits.WebsitePublisher.Model;
@@ -14,7 +15,9 @@ namespace ZKWeb.Toolkits.WebsitePublisher.Gui {
 			var dialog = new FolderBrowserDialog();
 			if (dialog.ShowDialog() == DialogResult.OK) {
 				tbWebRoot.Text = dialog.SelectedPath;
-				tbOutputName.Text = Path.GetFileName(dialog.SelectedPath);
+				var parts = Path.GetFileName(dialog.SelectedPath).Split('.');
+				var outputName = string.Join(".", parts.Take(parts.Length - (parts.Length > 1 ? 1 : 0)));
+				tbOutputName.Text = outputName;
 			}
 		}
 
@@ -32,6 +35,8 @@ namespace ZKWeb.Toolkits.WebsitePublisher.Gui {
 				parameters.WebRoot = tbWebRoot.Text;
 				parameters.OutputName = tbOutputName.Text;
 				parameters.OutputDirectory = tbOutputDirectory.Text;
+				parameters.IgnorePattern = tbIgnorePattern.Text;
+				parameters.Framework = cbFramework.Text;
 				var publisher = new WebsitePublisher(parameters);
 				await Task.Run(() => publisher.PublishWebsite());
 				MessageBox.Show("Success");

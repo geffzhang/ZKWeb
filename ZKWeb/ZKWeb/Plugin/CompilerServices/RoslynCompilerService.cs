@@ -7,14 +7,18 @@ using ZKWeb.Plugin.AssemblyLoaders;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Text;
 using ZKWebStandard.Utils;
+using System.FastReflection;
+using System.Reflection;
 
 namespace ZKWeb.Plugin.CompilerServices {
 	/// <summary>
-	/// Roslyn compiler service
+	/// Roslyn compiler service<br/>
+	/// 基于Roslyn的编译服务<br/>
 	/// </summary>
 	internal class RoslynCompilerService : ICompilerService {
 		/// <summary>
-		/// Target platform name
+		/// Target platform name, net or netstandard<br/>
+		/// 目标平台的名称, net或netstandard<br/>
 		/// </summary>
 #if NETCORE
 		public string TargetPlatform { get { return "netstandard"; } }
@@ -22,20 +26,24 @@ namespace ZKWeb.Plugin.CompilerServices {
 		public string TargetPlatform { get { return "net"; } }
 #endif
 		/// <summary>
-		/// Loaded namespaces, for reducing load time
+		/// Loaded namespaces, for reducing load time<br/>
+		/// 已加载的命名空间, 用于减少加载时间<br/>
 		/// </summary>
 		protected HashSet<string> LoadedNamespaces { get; set; }
 
 		/// <summary>
-		/// Initialize
+		/// Initialize<br/>
+		/// 初始化<br/>
 		/// </summary>
 		public RoslynCompilerService() {
 			LoadedNamespaces = new HashSet<string>();
 		}
 
 		/// <summary>
-		/// Find all using directive
-		/// And try to load the namespace as assembly
+		/// Find all using directive<br/>
+		/// And try to load the namespace as assembly<br/>
+		/// 寻找源代码中的所有using指令<br/>
+		/// 并尝试加载命名空间对应的程序集<br/>
 		/// </summary>
 		/// <param name="syntaxTrees">Syntax trees</param>
 		protected void LoadAssembliesFromUsings(IList<SyntaxTree> syntaxTrees) {
@@ -84,7 +92,8 @@ namespace ZKWeb.Plugin.CompilerServices {
 		}
 
 		/// <summary>
-		/// Compile source files to assembly
+		/// Compile source files to assembly<br/>
+		/// 编译源代码到程序集<br/>
 		/// </summary>
 		public void Compile(IList<string> sourceFiles,
 			string assemblyName, string assemblyPath, CompilationOptions options) {
@@ -120,16 +129,29 @@ namespace ZKWeb.Plugin.CompilerServices {
 			var pdbPath = ((!options.GeneratePdbFile) ? null : Path.Combine(
 				Path.GetDirectoryName(assemblyPath),
 				Path.GetFileNameWithoutExtension(assemblyPath) + ".pdb"));
+			// Create compilation options and set IgnoreCorLibraryDuplicatedTypes flag
+			// To avoid error like The type 'Path' exists in both
+			// 'System.Runtime.Extensions, Version=4.1.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a'
+			// and
+			// 'System.Private.CoreLib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e'
+			var compilationOptions = new CSharpCompilationOptions(
+				OutputKind.DynamicallyLinkedLibrary,
+				optimizationLevel: optimizationLevel);
+			var withTopLevelBinderFlagsMethod = compilationOptions.GetType()
+				.FastGetMethod("WithTopLevelBinderFlags", BindingFlags.Instance | BindingFlags.NonPublic);
+			var binderFlagsType = withTopLevelBinderFlagsMethod.GetParameters()[0].ParameterType;
+			compilationOptions = (CSharpCompilationOptions)withTopLevelBinderFlagsMethod.FastInvoke(
+				compilationOptions,
+				binderFlagsType.GetField("IgnoreCorLibraryDuplicatedTypes").GetValue(binderFlagsType));
 			// Compile to assembly, throw exception if error occurred
 			var compilation = CSharpCompilation.Create(assemblyName)
-				.WithOptions(new CSharpCompilationOptions(
-					OutputKind.DynamicallyLinkedLibrary,
-					optimizationLevel: optimizationLevel))
+				.WithOptions(compilationOptions)
 				.AddReferences(references)
 				.AddSyntaxTrees(syntaxTrees);
 			var emitResult = compilation.Emit(assemblyPath, pdbPath);
 			if (!emitResult.Success) {
-				throw new CompilationException(string.Join("\r\n", emitResult.Diagnostics));
+				throw new CompilationException(string.Join("\r\n",
+					emitResult.Diagnostics.Where(d => d.WarningLevel == 0)));
 			}
 		}
 	}

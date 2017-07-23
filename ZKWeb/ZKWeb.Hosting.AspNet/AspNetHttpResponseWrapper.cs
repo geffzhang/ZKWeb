@@ -1,18 +1,22 @@
 ﻿using System.IO;
 using ZKWebStandard.Web;
 using System.Web;
+using System.Diagnostics;
 
 namespace ZKWeb.Hosting.AspNet {
 	/// <summary>
-	/// Http response wrapper for Asp.Net
+	/// Http response wrapper for Asp.Net<br/>
+	/// Asp.Net Http回应的包装类<br/>
 	/// </summary>
 	internal class AspNetHttpResponseWrapper : IHttpResponse {
 		/// <summary>
-		/// Parent http context
+		/// Parent http context<br/>
+		/// 所属的Http上下文<br/>
 		/// </summary>
 		protected AspNetHttpContextWrapper ParentContext { get; set; }
 		/// <summary>
-		/// Original http response
+		/// Original http response<br/>
+		/// 原始的Http回应<br/>
 		/// </summary>
 		protected HttpResponse OriginalResponse { get; set; }
 
@@ -57,13 +61,15 @@ namespace ZKWeb.Hosting.AspNet {
 			OriginalResponse.Redirect(url, permanent);
 			End();
 		}
+		[DebuggerNonUserCode]
 		public void End() {
 			Body.Flush();
 			OriginalResponse.End();
 		}
 
 		/// <summary>
-		/// Initialize
+		/// Initialize<br/>
+		/// 初始化<br/>
 		/// </summary>
 		/// <param name="parentContext">Parent http context</param>
 		/// <param name="originalResponse">Original http response</param>

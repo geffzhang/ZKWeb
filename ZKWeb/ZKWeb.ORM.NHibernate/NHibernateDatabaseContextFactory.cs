@@ -6,36 +6,49 @@ using ZKWeb.Database;
 using ZKWebStandard.Extensions;
 using ZKWebStandard.Utils;
 using System;
-using System.IO;
 using System.Text;
 using NHibernate.Tool.hbm2ddl;
 using NHibernate;
 using ZKWeb.Logging;
 using ZKWeb.Storage;
+using ZKWeb.Server;
 
 namespace ZKWeb.ORM.NHibernate {
 	/// <summary>
-	/// NHibernate database context factory
+	/// NHibernate database context factory<br/>
+	/// NHibernate的数据库上下文生成器<br/>
 	/// </summary>
-	internal class NHibernateDatabaseContextFactory : IDatabaseContextFactory {
+	public class NHibernateDatabaseContextFactory : IDatabaseContextFactory {
 		/// <summary>
-		/// Database type
+		/// Batch size<br/>
+		/// 批量操作的命令数量<br/>
 		/// </summary>
-		private string Database { get; set; }
+		protected const int BatchSize = 1024;
 		/// <summary>
-		/// NHibernate session factory
+		/// Database type<br/>
+		/// 数据库类型<br/>
 		/// </summary>
-		private ISessionFactory SessionFactory { get; set; }
+		protected string Database { get; set; }
+		/// <summary>
+		/// Connection string<br/>
+		/// 连接字符串<br/>
+		/// </summary>
+		protected string ConnectionString { get; set; }
+		/// <summary>
+		/// NHibernate session factory<br/>
+		/// NHibernate的会话生成器<br/>
+		/// </summary>
+		protected ISessionFactory SessionFactory { get; set; }
 
 		/// <summary>
-		/// Initialize
+		/// Initialize<br/>
+		/// 初始化<br/>
 		/// </summary>
 		/// <param name="database">Database type</param>
 		/// <param name="connectionString">Connection string</param>
 		public NHibernateDatabaseContextFactory(string database, string connectionString) {
 			// create database configuration
 			var pathConfig = Application.Ioc.Resolve<LocalPathConfig>();
-			var fileStorage = Application.Ioc.Resolve<IFileStorage>();
 			IPersistenceConfigurer db;
 			if (string.Compare(database, "PostgreSQL", true) == 0) {
 				db = BetterPostgreSQLConfiguration.Better.ConnectionString(connectionString);
@@ -53,32 +66,53 @@ namespace ZKWeb.ORM.NHibernate {
 			configuration.Database(db);
 			// register entity mappings
 			var providers = Application.Ioc.ResolveMany<IEntityMappingProvider>();
-			var entityTypes = providers.Select(p =>
-				ReflectionUtils.GetGenericArguments(
-				p.GetType(), typeof(IEntityMappingProvider<>))[0]).ToList();
-			configuration.Mappings(m => entityTypes.ForEach(t => m.FluentMappings.Add(
-				typeof(NHibernateEntityMappingBuilder<>).MakeGenericType(t))));
-			// call initialize handlers
+			var entityTypes = providers
+				.Select(p => ReflectionUtils.GetGenericArguments(
+					p.GetType(), typeof(IEntityMappingProvider<>))[0])
+				.Distinct().ToList();
+			configuration.Mappings(m => {
+				foreach (var entityType in entityTypes) {
+					var builder = typeof(NHibernateEntityMappingBuilder<>).MakeGenericType(entityType);
+					m.FluentMappings.Add(builder);
+				}
+			});
+			// set many-to-many table name
 			var handlers = Application.Ioc.ResolveMany<IDatabaseInitializeHandler>();
 			configuration.Mappings(m => {
-				m.FluentMappings.Conventions.Add(ConventionBuilder.Class.Always(x => {
-					var tableName = x.EntityType.Name;
-					handlers.ForEach(h => h.ConvertTableName(ref tableName));
-					x.Table(tableName);
-				}));
 				m.FluentMappings.Conventions.Add(ConventionBuilder.HasManyToMany.Always(x => {
-					var tableName = string.Format(
-						"{0}To{1}", x.EntityType.Name, x.ChildType.Name);
-					handlers.ForEach(h => h.ConvertTableName(ref tableName));
+					var tableName = string.Format("{0}To{1}", x.EntityType.Name, x.ChildType.Name);
+					foreach (var handler in handlers) {
+						handler.ConvertTableName(ref tableName);
+					}
 					x.Table(tableName);
 				}));
 			});
+			// check if database auto migration is disabled
+			var configManager = Application.Ioc.Resolve<WebsiteConfigManager>();
+			var noAutoMigration = configManager.WebsiteConfig.Extra.GetOrDefault<bool?>(
+				NHibernateExtraConfigKeys.DisableNHibernateDatabaseAutoMigration) ?? false;
+			if (!noAutoMigration) {
+				MigrateDatabase(database, connectionString, configuration);
+			}
+			// create nhibernate session
+			Database = database;
+			ConnectionString = connectionString;
+			SessionFactory = configuration.BuildSessionFactory();
+		}
+
+		/// <summary>
+		/// Perform database migration<br/>
+		/// 迁移数据库<br/>
+		/// </summary>
+		protected void MigrateDatabase(
+			string database, string connectionString, FluentConfiguration configuration) {
 			// initialize database scheme
 			// flow:
 			// - generate ddl script
 			// - compare to App_Data\nh_{hash}.ddl
 			// - if they are different, upgrade database scheme and write ddl script to file
 			// it can make the website startup faster
+			var fileStorage = Application.Ioc.Resolve<IFileStorage>();
 			var hash = PasswordUtils.Sha1Sum(
 				Encoding.UTF8.GetBytes(database + connectionString)).ToHex();
 			var ddlFileEntry = fileStorage.GetStorageFile($"nh_{hash}.ddl");
@@ -98,18 +132,18 @@ namespace ZKWeb.ORM.NHibernate {
 					onBuildFactorySuccess = () => ddlFileEntry.WriteAllText(script);
 				}
 			});
-			// create nhibernate session factory and write ddl script to file
-			Database = database;
-			SessionFactory = configuration.BuildSessionFactory();
+			// write ddl script to file
 			onBuildFactorySuccess?.Invoke();
 		}
 
 		/// <summary>
-		/// Create database context
+		/// Create database context<br/>
+		/// 创建数据库上下文<br/>
 		/// </summary>
 		/// <returns></returns>
 		public IDatabaseContext CreateContext() {
 			var session = SessionFactory.OpenSession();
+			try { session.SetBatchSize(BatchSize); } catch (NotSupportedException) { }
 			return new NHibernateDatabaseContext(session, Database);
 		}
 	}

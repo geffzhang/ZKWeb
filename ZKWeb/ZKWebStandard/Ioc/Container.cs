@@ -1,8 +1,6 @@
 ﻿using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using System.Linq.Expressions;
 using System.Reflection;
 using System.Threading;
 using ZKWebStandard.Collections;
@@ -10,40 +8,88 @@ using ZKWebStandard.Extensions;
 
 namespace ZKWebStandard.Ioc {
 	/// <summary>
-	/// IoC container
-	/// Support constructor dependency injection
-	/// Benchmark
+	/// IoC container<br/>
+	/// Support constructor dependency injection<br/>
+	/// IoC容器<br/>
+	/// 支持构造函数注入<br/>
+	/// Benchmark (性能测试)<br/>
 	/// - Register Transient: 1000000/2.3s (DryIoc: 6.1s)
 	/// - Register Singleton: 1000000/2.6s (DryIoc: 5.2s)
-	/// - Resolve Transient: 10000000/3.2s (DryIoc: 0.54s)
-	/// - Resolve Singleton: 10000000/3.2s (DryIoc: 0.43s)
-	/// - ResolveMany Transient: 10000000/11.8s (DryIoc: 14.7s)
-	/// - ResolveMany Singleton: 10000000/11.1s (DryIoc: 12.9s)
+	/// - Resolve Transient: 10000000/0.27s (DryIoc: 0.54s)
+	/// - Resolve Singleton: 10000000/0.27s (DryIoc: 0.43s)
+	/// - ResolveMany Transient: 10000000/0.84s (DryIoc: 14.7s)
+	/// - ResolveMany Singleton: 10000000/0.88s (DryIoc: 12.9s)
 	/// </summary>
+	/// <seealso cref="IContainer"/>
+	/// <seealso cref="IRegistrator"/>
+	/// <seealso cref="IGenericRegistrator"/>
+	/// <seealso cref="IResolver"/>
+	/// <seealso cref="IGenericResolver"/>
+	/// <seealso cref="IContainerExtensions"/>
+	/// <example>
+	/// <code language="cs">
+	/// void Example() {
+	/// 	var animals = Application.Ioc.ResolveMany&lt;IAnimal&gt;()
+	/// 	// animals contains instances of Dog and Cow
+	///
+	/// 	var animalManager = Application.Ioc.Resolve&lt;IAnimalManager&gt;();
+	/// 	// animalManager is AnimalManager
+	/// 	
+	/// 	var otherAnimalManager = Application.Ioc.Resolve&lt;IAnimalManager&gt;();
+	/// 	// animalManager only create once, otherAnimalManager == animalManager
+	/// }
+	///
+	/// public interface IAnimal { }
+	///
+	/// [ExportMany]
+	/// public class Dog : IAnimal { }
+	///
+	/// [ExportMany]
+	/// public class Cow : IAnimal { }
+	///
+	/// public interface IAnimalManager { }
+	///
+	/// [ExportMany, SingletonUsage]
+	/// public class AnimalManager : IAnimalManager {
+	/// 	// inject animals
+	/// 	public AnimalManager(IEnumerable&lt;IAnimal&gt; animals) { }
+	/// }
+	///	/// </code>
+	///	/// </example>
 	public class Container : IContainer {
 		/// <summary>
-		/// Factories
-		/// { (Type, Service key): [Factory] }
+		/// Factories<br/>
+		/// 工厂函数的集合<br/>
+		/// { (Type, Service key): (Factory, Implementation Type) }
 		/// </summary>
-		protected IDictionary<Pair<Type, object>, IList<Func<object>>> Factories { get; set; }
+		protected IDictionary<Pair<Type, object>, List<ContainerFactoryData>> Factories { get; set; }
 		/// <summary>
-		/// Factories lock
+		/// Factories lock<br/>
+		/// 访问工厂函数的集合时使用的锁<br/>
 		/// </summary>
 		protected ReaderWriterLockSlim FactoriesLock { get; set; }
+		/// <summary>
+		/// Increase after each modification<br/>
+		/// 更新后自动增加<br/>
+		/// </summary>
+		internal protected int Revision;
 
 		/// <summary>
-		/// Initialize
+		/// Initialize<br/>
+		/// 初始化<br/>
 		/// </summary>
 		public Container() {
-			Factories = new Dictionary<Pair<Type, object>, IList<Func<object>>>();
+			Factories = new Dictionary<Pair<Type, object>, List<ContainerFactoryData>>();
 			FactoriesLock = new ReaderWriterLockSlim(LockRecursionPolicy.NoRecursion);
+			Revision = 0;
 			RegisterSelf();
 		}
 
 		/// <summary>
-		/// Get base types and interfaces
+		/// Get base types and interfaces<br/>
+		/// 获取类型的所有基类和接口类<br/>
 		/// </summary>
-		protected static IEnumerable<Type> GetImplementedTypes(Type type) {
+		public static IEnumerable<Type> GetImplementedTypes(Type type) {
 			foreach (var interfaceType in type.GetTypeInfo().GetInterfaces()) {
 				yield return interfaceType;
 			}
@@ -55,12 +101,16 @@ namespace ZKWebStandard.Ioc {
 		}
 
 		/// <summary>
-		/// Get base types and interfaces that can be a service type
-		/// What type can't be a service type
-		/// - It's non public and parameter nonPublicServiceTypes is false
-		/// - It's from mscorlib
+		/// Get base types and interfaces that can be a service type<br/>
+		/// What type can't be a service type<br/>
+		/// - It's non public and parameter nonPublicServiceTypes is false<br/>
+		/// - It's from mscorlib<br/>
+		/// 获取类型的可以作为服务类型的基类和接口类<br/>
+		/// 什么类型不能作为服务类型<br/>
+		/// - 类型是非公开, 并且参数nonPublicServiceTypes是false<br/>
+		/// - 类型来源于mscorlib<br/>
 		/// </summary>
-		protected static IEnumerable<Type> GetImplementedServiceTypes(Type type, bool nonPublicServiceTypes) {
+		public static IEnumerable<Type> GetImplementedServiceTypes(Type type, bool nonPublicServiceTypes) {
 			var mscorlibAssembly = typeof(int).GetTypeInfo().Assembly;
 			foreach (var serviceType in GetImplementedTypes(type)) {
 				var serviceTypeInfo = serviceType.GetTypeInfo();
@@ -72,7 +122,8 @@ namespace ZKWebStandard.Ioc {
 		}
 
 		/// <summary>
-		/// Register self instance
+		/// Register self instance<br/>
+		/// 注册自身到容器<br/>
 		/// </summary>
 		protected void RegisterSelf() {
 			Unregister<IContainer>(null);
@@ -88,63 +139,76 @@ namespace ZKWebStandard.Ioc {
 		}
 
 		/// <summary>
-		/// Register factory with service type and service key
+		/// Register factory with service type and service key<br/>
+		/// 根据服务类型和服务键注册工厂函数<br/>
 		/// </summary>
-		protected void RegisterFactory(Type serviceType, Func<object> factory, object serviceKey) {
+		protected void RegisterFactory(
+			Type serviceType, ContainerFactoryData factoryData, object serviceKey) {
 			var key = Pair.Create(serviceType, serviceKey);
 			FactoriesLock.EnterWriteLock();
 			try {
-				var factors = Factories.GetOrCreate(key, () => new List<Func<object>>());
-				factors.Add(factory);
+				var factories = Factories.GetOrCreate(key, () => new List<ContainerFactoryData>());
+				factories.Add(factoryData);
 			} finally {
+				Interlocked.Increment(ref Revision);
 				FactoriesLock.ExitWriteLock();
 			}
 		}
 
 		/// <summary>
-		/// Register factory with service types and service key
+		/// Register factory with service types and service key<br/>
+		/// 根据多个服务类型和服务键注册工厂函数<br/>
 		/// </summary>
-		protected void RegisterFactoryMany(IList<Type> serviceTypes, Func<object> factory, object serviceKey) {
+		protected void RegisterFactoryMany(
+			IList<Type> serviceTypes, ContainerFactoryData factoryData, object serviceKey) {
 			FactoriesLock.EnterWriteLock();
 			try {
 				foreach (var serviceType in serviceTypes) {
 					var key = Pair.Create(serviceType, serviceKey);
-					var factories = Factories.GetOrCreate(key, () => new List<Func<object>>());
-					factories.Add(factory);
+					var factories = Factories.GetOrCreate(key, () => new List<ContainerFactoryData>());
+					factories.Add(factoryData);
 				}
 			} finally {
+				Interlocked.Increment(ref Revision);
 				FactoriesLock.ExitWriteLock();
 			}
 		}
 
 		/// <summary>
-		/// Register implementation type with service type and service key
+		/// Register implementation type with service type and service key<br/>
+		/// 根据服务类型和服务键注册实现类型<br/>
 		/// </summary>
 		public void Register(
 			Type serviceType, Type implementationType, ReuseType reuseType, object serviceKey) {
 			var factory = this.BuildFactory(implementationType, reuseType);
-			RegisterFactory(serviceType, factory, serviceKey);
+			var factoryData = new ContainerFactoryData(factory, implementationType);
+			RegisterFactory(serviceType, factoryData, serviceKey);
 		}
 
 		/// <summary>
-		/// Register implementation type with service type and service key
+		/// Register implementation type with service type and service key<br/>
+		/// 根据服务类型和服务键注册实现类型<br/>
 		/// </summary>
 		public void Register<TService, TImplementation>(ReuseType reuseType, object serviceKey) {
 			Register(typeof(TService), typeof(TImplementation), reuseType, serviceKey);
 		}
 
 		/// <summary>
-		/// Register implementation type with service types and service key
+		/// Register implementation type with service types and service key<br/>
+		/// 根据多个服务类型和服务键注册实现类型<br/>
 		/// </summary>
 		public void RegisterMany(
 			IList<Type> serviceTypes, Type implementationType, ReuseType reuseType, object serviceKey) {
 			var factory = this.BuildFactory(implementationType, reuseType);
-			RegisterFactoryMany(serviceTypes, factory, serviceKey);
+			var factoryData = new ContainerFactoryData(factory, implementationType);
+			RegisterFactoryMany(serviceTypes, factoryData, serviceKey);
 		}
 
 		/// <summary>
-		/// Register implementation type with service types and service key
-		/// Service types are obtain from base types and interfaces
+		/// Register implementation type with service types and service key<br/>
+		/// Service types are obtain from base types and interfaces<br/>
+		/// 根据多个服务类型和服务键注册实现类型<br/>
+		/// 服务类型是实现类型的基类和接口<br/>
 		/// </summary>
 		public void RegisterMany(Type implementationType,
 			ReuseType reuseType, object serviceKey, bool nonPublicServiceTypes) {
@@ -154,8 +218,10 @@ namespace ZKWebStandard.Ioc {
 		}
 
 		/// <summary>
-		/// Register implementation type with service types and service key
-		/// Service types are obtain from base types and interfaces
+		/// Register implementation type with service types and service key<br/>
+		/// Service types are obtain from base types and interfaces<br/>
+		/// 根据多个服务类型和服务键注册实现类型<br/>
+		/// 服务类型是实现类型的基类和接口<br/>
 		/// </summary>
 		public void RegisterMany<TImplementation>(
 			ReuseType reuseType, object serviceKey, bool nonPublicServiceTypes) {
@@ -163,33 +229,42 @@ namespace ZKWebStandard.Ioc {
 		}
 
 		/// <summary>
-		/// Register instance with service type and service key
-		/// Reuse type is forced to Singleton
+		/// Register instance with service type and service key<br/>
+		/// Reuse type is forced to Singleton<br/>
+		/// 根据服务类型和服务键注册实例<br/>
+		/// 重用类型强制为单例<br/>
 		/// </summary>
 		public void RegisterInstance(Type serviceType, object instance, object serviceKey) {
 			var factory = this.BuildFactory(() => instance, ReuseType.Singleton);
-			RegisterFactory(serviceType, factory, serviceKey);
+			var factoryData = new ContainerFactoryData(factory, instance.GetType());
+			RegisterFactory(serviceType, factoryData, serviceKey);
 		}
 
 		/// <summary>
-		/// Register instance with service type and service key
-		/// Reuse type is forced to Singleton
+		/// Register instance with service type and service key<br/>
+		/// Reuse type is forced to Singleton<br/>
+		/// 根据服务类型和服务键注册实例<br/>
+		/// 重用类型强制为单例<br/>
 		/// </summary>
 		public void RegisterInstance<TService>(TService instance, object serviceKey) {
 			RegisterInstance(typeof(TService), instance, serviceKey);
 		}
 
 		/// <summary>
-		/// Register delegate with service type and service key
+		/// Register delegate with service type and service key<br/>
+		/// 根据服务类型和服务键注册工厂函数<br/>
 		/// </summary>
 		public void RegisterDelegate(
 			Type serviceType, Func<object> factory, ReuseType reuseType, object serviceKey) {
 			factory = this.BuildFactory(factory, reuseType);
-			RegisterFactory(serviceType, factory, serviceKey);
+			// We can't known what type will be returned, the hint type will be service type
+			var factoryData = new ContainerFactoryData(factory, serviceType);
+			RegisterFactory(serviceType, factoryData, serviceKey);
 		}
 
 		/// <summary>
-		/// Register delegate with service type and service key
+		/// Register delegate with service type and service key<br/>
+		/// 根据服务类型和服务键注册工厂函数<br/>
 		/// </summary>
 		public void RegisterDelegate<TService>(
 			Func<TService> factory, ReuseType reuseType, object serviceKey) {
@@ -197,36 +272,29 @@ namespace ZKWebStandard.Ioc {
 		}
 
 		/// <summary>
-		/// Automatic register types by export attributes
+		/// Automatic register types by export attributes<br/>
+		/// 按Export属性自动注册类型到容器<br/>
 		/// </summary>
 		public void RegisterExports(IEnumerable<Type> types) {
 			foreach (var type in types) {
 				var typeInfo = type.GetTypeInfo();
-				var exportManyAttribute = typeInfo.GetAttribute<ExportManyAttribute>();
-				if (exportManyAttribute == null) {
+				// Get export attributes
+				var exportAttributes = typeInfo.GetAttributes<ExportAttributeBase>();
+				if (!exportAttributes.Any()) {
 					continue;
 				}
-				// From ExportManyAttribute
+				// Get reuse attribute
 				var reuseType = typeInfo.GetAttribute<ReuseAttribute>()?.ReuseType ?? default(ReuseType);
-				var contractKey = exportManyAttribute.ContractKey;
-				var except = exportManyAttribute.Except;
-				var nonPublic = exportManyAttribute.NonPublic;
-				var clearExists = exportManyAttribute.ClearExists;
-				var serviceTypes = GetImplementedServiceTypes(type, nonPublic).ToList();
-				if (except != null && except.Any()) {
-					// Apply except types
-					serviceTypes = serviceTypes.Where(t => !except.Contains(t)).ToList();
+				// Call RegisterToContainer
+				foreach (var attribute in exportAttributes) {
+					attribute.RegisterToContainer(this, type, reuseType);
 				}
-				if (clearExists) {
-					// Apply clear exist
-					serviceTypes.ForEach(t => Unregister(t, contractKey));
-				}
-				RegisterMany(serviceTypes, type, reuseType, contractKey);
 			}
 		}
 
 		/// <summary>
-		/// Unregister all factories with specified service type and service key
+		/// Unregister all factories with specified service type and service key<br/>
+		/// 注销所有注册到指定服务类型和服务键的工厂函数<br/>
 		/// </summary>
 		public void Unregister(Type serviceType, object serviceKey) {
 			var key = Pair.Create(serviceType, serviceKey);
@@ -234,19 +302,49 @@ namespace ZKWebStandard.Ioc {
 			try {
 				Factories.Remove(key);
 			} finally {
+				Interlocked.Increment(ref Revision);
 				FactoriesLock.ExitWriteLock();
 			}
 		}
 
 		/// <summary>
-		/// Unregister all factories with specified service type and service key
+		/// Unregister all factories with specified service type and service key<br/>
+		/// 注销所有注册到指定服务类型和服务键的工厂函数<br/>
 		/// </summary>
 		public void Unregister<TService>(object serviceKey) {
 			Unregister(typeof(TService), serviceKey);
 		}
 
 		/// <summary>
-		/// Unregister all factories
+		/// Unregister factories with specified implementation type and service key<br/>
+		/// 按实现类型和服务键注销所有相关的工厂函数<br/>
+		/// </summary>
+		public void UnregisterImplementation(Type implementationType, object serviceKey) {
+			var serviceTypes = GetImplementedServiceTypes(implementationType, true).ToList();
+			var keys = serviceTypes.Select(t => Pair.Create(t, serviceKey)).ToList();
+			FactoriesLock.EnterWriteLock();
+			try {
+				foreach (var key in keys) {
+					var factories = Factories.GetOrDefault(key);
+					factories?.RemoveAll(f => f.ImplementationTypeHint == implementationType);
+				}
+			} finally {
+				Interlocked.Increment(ref Revision);
+				FactoriesLock.ExitWriteLock();
+			}
+		}
+
+		/// <summary>
+		/// Unregister factories with specified implementation type and service key<br/>
+		/// 按实现类型和服务键注册所有相关的工厂函数<br/>
+		/// </summary>
+		public void UnregisterImplementation<TImplementation>(object serviceKey) {
+			UnregisterImplementation(typeof(TImplementation), serviceKey);
+		}
+
+		/// <summary>
+		/// Unregister all factories<br/>
+		/// 注销所有工厂函数<br/>
 		/// </summary>
 		public void UnregisterAll() {
 			FactoriesLock.EnterWriteLock();
@@ -259,8 +357,32 @@ namespace ZKWebStandard.Ioc {
 		}
 
 		/// <summary>
-		/// Resolve service with type and key
-		/// Throw exception or return default value if not found, dependent on ifUnresolved
+		/// Update factories cache for service type and return newest data<br/>
+		/// 根据服务类型更新工厂函数的缓存并返回最新的数据<br/>
+		/// </summary>
+		internal ContainerFactoriesCacheData UpdateFactoriesCache<TService>() {
+			var key = Pair.Create(typeof(TService), (object)null);
+			var factoriesCopy = new List<Func<object>>();
+			FactoriesLock.EnterReadLock();
+			try {
+				var factories = Factories.GetOrDefault(key);
+				if (factories != null) {
+					factoriesCopy.Capacity = factories.Count;
+					factoriesCopy.AddRange(factories.Select(f => f.Factory));
+				}
+				var data = new ContainerFactoriesCacheData(this, factoriesCopy);
+				ContainerFactoriesCache<TService>.Data = data;
+				return data;
+			} finally {
+				FactoriesLock.ExitReadLock();
+			}
+		}
+
+		/// <summary>
+		/// Resolve service with type and key<br/>
+		/// Throw exception or return default value if not found, dependent on ifUnresolved<br/>
+		/// 根据服务类型和服务键获取实例<br/>
+		/// 找不到时根据ifUnresolved参数抛出例外或者返回默认值<br/>
 		/// </summary>
 		public object Resolve(Type serviceType, IfUnresolved ifUnresolved, object serviceKey) {
 			var key = Pair.Create(serviceType, serviceKey);
@@ -273,7 +395,7 @@ namespace ZKWebStandard.Ioc {
 				var factories = Factories.GetOrDefault(key);
 				factoriesCount = factories?.Count ?? 0;
 				if (factoriesCount == 1) {
-					factory = factories[0];
+					factory = factories[0].Factory;
 				}
 			} finally {
 				FactoriesLock.ExitReadLock();
@@ -298,49 +420,79 @@ namespace ZKWebStandard.Ioc {
 		}
 
 		/// <summary>
-		/// Resolve service with type and key
-		/// Throw exception or return default value if not found, dependent on ifUnresolved
+		/// Resolve service with type and key<br/>
+		/// Throw exception or return default value if not found, dependent on ifUnresolved<br/>
+		/// 根据服务类型和服务键获取实例<br/>
+		/// 找不到时根据ifUnresolved参数抛出例外或者返回默认值<br/>
 		/// </summary>
 		public TService Resolve<TService>(IfUnresolved ifUnresolved, object serviceKey) {
+			if (serviceKey == null && ContainerFactoriesCache.Enabled) {
+				// Use faster method
+				var data = ContainerFactoriesCache<TService>.Data;
+				if (data == null || !data.IsMatched(this)) {
+					data = UpdateFactoriesCache<TService>();
+				}
+				if (data.SingleFactory != null) {
+					return (TService)data.SingleFactory();
+				}
+			}
+			// Use default method
 			return (TService)Resolve(typeof(TService), ifUnresolved, serviceKey);
 		}
 
 		/// <summary>
-		/// Resolve services with type and key
-		/// Return empty sequence if no service registered
+		/// Resolve services with type and key<br/>
+		/// Return empty sequence if no service registered<br/>
+		/// 根据服务类型和服务键获取实例列表<br/>
+		/// 如果无注册的服务则返回空列表<br/>
 		/// </summary>
 		public IEnumerable<object> ResolveMany(Type serviceType, object serviceKey) {
 			var key = Pair.Create(serviceType, serviceKey);
-			var factorsCopy = new List<Func<object>>();
+			var factoriesCopy = new List<Func<object>>();
 			FactoriesLock.EnterReadLock();
 			try {
 				// Copy factories
-				var factors = Factories.GetOrDefault(key);
-				if (factors != null) {
-					factorsCopy.Capacity = factors.Count;
-					factorsCopy.AddRange(factors);
+				var factories = Factories.GetOrDefault(key);
+				if (factories != null) {
+					factoriesCopy.Capacity = factories.Count;
+					factoriesCopy.AddRange(factories.Select(f => f.Factory));
 				}
 			} finally {
 				FactoriesLock.ExitReadLock();
 			}
 			// Get service instances
-			foreach (var factory in factorsCopy) {
+			foreach (var factory in factoriesCopy) {
 				yield return factory();
 			}
 		}
 
 		/// <summary>
-		/// Resolve services with type and key
-		/// Return empty sequence if no service registered
+		/// Resolve services with type and key<br/>
+		/// Return empty sequence if no service registered<br/>
+		/// 根据服务类型和服务键获取服务列表<br/>
+		/// 如果无注册的服务则返回空列表<br/>
 		/// </summary>
 		public IEnumerable<TService> ResolveMany<TService>(object serviceKey) {
-			foreach (var instance in ResolveMany(typeof(TService), serviceKey)) {
-				yield return (TService)instance;
+			if (serviceKey == null && ContainerFactoriesCache.Enabled) {
+				// Use faster method
+				var data = ContainerFactoriesCache<TService>.Data;
+				if (data == null || !data.IsMatched(this)) {
+					data = UpdateFactoriesCache<TService>();
+				}
+				foreach (var factory in data.Factories) {
+					yield return (TService)factory();
+				}
+			} else {
+				// Use default method
+				foreach (var instance in ResolveMany(typeof(TService), serviceKey)) {
+					yield return (TService)instance;
+				}
 			}
 		}
 
 		/// <summary>
-		/// Clone container
+		/// Clone container<br/>
+		/// 克隆容器<br/>
 		/// </summary>
 		/// <returns></returns>
 		public object Clone() {
@@ -351,6 +503,7 @@ namespace ZKWebStandard.Ioc {
 					clone.Factories[pair.Key] = pair.Value.ToList();
 				}
 				clone.RegisterSelf(); // replace self instances
+				clone.Revision = Revision; // inherit revision
 			} finally {
 				FactoriesLock.ExitReadLock();
 			}
@@ -358,7 +511,8 @@ namespace ZKWebStandard.Ioc {
 		}
 
 		/// <summary>
-		/// Dispose container
+		/// Dispose container<br/>
+		/// 清理容器的资源<br/>
 		/// </summary>
 		public void Dispose() {
 			GC.Collect();

@@ -11,30 +11,44 @@ using MongoDB.Bson;
 
 namespace ZKWeb.ORM.MongoDB {
 	/// <summary>
-	/// Dapper database context
+	/// MongoDB database context<br/>
+	/// MongoDB的数据库上下文<br/>
 	/// </summary>
-	internal class MongoDBDatabaseContext : IDatabaseContext {
+	public class MongoDBDatabaseContext : IDatabaseContext {
 		/// <summary>
-		/// MongoDB entity mappings
+		/// MongoDB entity mappings<br/>
+		/// MongoDB的实体映射集合<br/>
 		/// </summary>
-		private MongoDBEntityMappings Mappings { get; set; }
+		protected MongoDBEntityMappings Mappings { get; set; }
 		/// <summary>
-		/// Database object
+		/// Database object<br/>
+		/// 数据库对象<br/>
 		/// </summary>
-		private IMongoDatabase Database { get; set; }
+		protected IMongoDatabase MongoDatabase { get; set; }
 		/// <summary>
-		/// ORM name
+		/// ORM name<br/>
+		/// ORM名称<br/>
 		/// </summary>
 		public string ORM { get { return ConstORM; } }
+#pragma warning disable CS1591
 		public const string ConstORM = "MongoDB";
+#pragma warning restore CS1591
 		/// <summary>
-		/// Database type
-		/// Same as ORM name
+		/// Database type<br/>
+		/// Same as ORM name<br/>
+		/// 数据库类型<br/>
+		/// 和ORM名称一样<br/>
 		/// </summary>
-		string IDatabaseContext.Database { get { return ConstORM; } }
+		public string Database { get { return ConstORM; } }
+		/// <summary>
+		/// Underlying database connection<br/>
+		/// 底层的数据库连接<br/>
+		/// </summary>
+		public object DbConnection { get { return MongoDatabase; } }
 
 		/// <summary>
-		/// Initialize
+		/// Initialize<br/>
+		/// 初始化<br/>
 		/// </summary>
 		/// <param name="connectionUrl">Connection url</param>
 		/// <param name="mappings">Dapper entity mappings</param>
@@ -42,35 +56,41 @@ namespace ZKWeb.ORM.MongoDB {
 			MongoUrl connectionUrl,
 			MongoDBEntityMappings mappings) {
 			Mappings = mappings;
-			Database = new MongoClient(connectionUrl).GetDatabase(connectionUrl.DatabaseName);
+			MongoDatabase = new MongoClient(connectionUrl).GetDatabase(connectionUrl.DatabaseName);
 		}
 
 		/// <summary>
-		/// Do nothing
+		/// Do nothing<br/>
+		/// 不做任何事情<br/>
 		/// </summary>
 		public void Dispose() { }
 
 		/// <summary>
-		/// Do Nothing
+		/// Do Nothing<br/>
+		/// 不做任何事情<br/>
 		/// </summary>
 		public void BeginTransaction(IsolationLevel? isolationLevel = null) { }
 
 		/// <summary>
-		/// Do Nothing
+		/// Do Nothing<br/>
+		/// 不做任何事情<br/>
 		/// </summary>
 		public void FinishTransaction() { }
 
 		/// <summary>
-		/// Get mongo collection
+		/// Get mongo collection<br/>
+		/// 获取数据集合<br/>
 		/// </summary>
-		private IMongoCollection<T> GetCollection<T>()
+		protected IMongoCollection<T> GetCollection<T>()
 			where T : class {
 			var mapping = Mappings.GetMapping(typeof(T));
-			return Database.GetCollection<T>(mapping.CollectionName);
+			return MongoDatabase.GetCollection<T>(mapping.CollectionName);
 		}
 
 		/// <summary>
-		/// Get the query object for specific entity
+		/// Get the query object for specific entity type<br/>
+		/// 获取指定实体类型的查询对象<br/>
+		/// <br/>
 		/// </summary>
 		public IQueryable<T> Query<T>()
 			where T : class, IEntity {
@@ -78,8 +98,10 @@ namespace ZKWeb.ORM.MongoDB {
 		}
 
 		/// <summary>
-		/// Get single entity that matched the given predicate
-		/// It should return null if no matched entity found
+		/// Get single entity that matched the given predicate<br/>
+		/// It should return null if no matched entity found<br/>
+		/// 获取符合传入条件的单个实体<br/>
+		/// 如果无符合条件的实体应该返回null<br/>
 		/// </summary>
 		public T Get<T>(Expression<Func<T, bool>> predicate)
 			where T : class, IEntity {
@@ -87,7 +109,8 @@ namespace ZKWeb.ORM.MongoDB {
 		}
 
 		/// <summary>
-		/// Get how many entities that matched the given predicate
+		/// Get how many entities that matched the given predicate<br/>
+		/// 获取符合传入条件的实体数量<br/>
 		/// </summary>
 		public long Count<T>(Expression<Func<T, bool>> predicate)
 			where T : class, IEntity {
@@ -95,17 +118,20 @@ namespace ZKWeb.ORM.MongoDB {
 		}
 
 		/// <summary>
-		/// Make expression for filter entity by id
-		/// Result is (e => e.Id == entity.Id)
+		/// Make expression for filter entity by id<br/>
+		/// Result is (e =&gt; e.Id == entity.Id)<br/>
+		/// 生成根据实体Id过滤的表达式<br/>
+		/// 结果是 (e =&gt; e.Id == entity.Id)<br/>
 		/// </summary>
-		private Expression<Func<T, bool>> MakeIdExpression<T>(T entity) {
+		protected Expression<Func<T, bool>> MakeIdExpression<T>(T entity) {
 			var mapping = Mappings.GetMapping(typeof(T));
 			return ExpressionUtils.MakeMemberEqualiventExpression<T>(
 				mapping.IdMember.Name, mapping.IdMember.FastGetValue(entity));
 		}
 
 		/// <summary>
-		/// Save entity to database
+		/// Save entity to database<br/>
+		/// 保存实体到数据库<br/>
 		/// </summary>
 		public void Save<T>(ref T entity, Action<T> update = null)
 			where T : class, IEntity {
@@ -121,7 +147,8 @@ namespace ZKWeb.ORM.MongoDB {
 		}
 
 		/// <summary>
-		/// Delete entity from database
+		/// Delete entity from database<br/>
+		/// 删除数据库中的实体<br/>
 		/// </summary>
 		public void Delete<T>(T entity)
 			where T : class, IEntity {
@@ -132,7 +159,8 @@ namespace ZKWeb.ORM.MongoDB {
 		}
 
 		/// <summary>
-		/// Batch save entities
+		/// Batch save entities<br/>
+		/// 批量保存实体<br/>
 		/// </summary>
 		public void BatchSave<T>(ref IEnumerable<T> entities, Action<T> update = null)
 			where T : class, IEntity {
@@ -151,7 +179,8 @@ namespace ZKWeb.ORM.MongoDB {
 		}
 
 		/// <summary>
-		/// Batch update entities
+		/// Batch update entities<br/>
+		/// 批量更新实体<br/>
 		/// </summary>
 		public long BatchUpdate<T>(Expression<Func<T, bool>> predicate, Action<T> update)
 			where T : class, IEntity {
@@ -161,7 +190,8 @@ namespace ZKWeb.ORM.MongoDB {
 		}
 
 		/// <summary>
-		/// Batch delete entities
+		/// Batch delete entities<br/>
+		/// 批量删除实体<br/>
 		/// </summary>
 		public long BatchDelete<T>(Expression<Func<T, bool>> predicate, Action<T> beforeDelete)
 			where T : class, IEntity {
@@ -178,26 +208,50 @@ namespace ZKWeb.ORM.MongoDB {
 		}
 
 		/// <summary>
-		/// Perform a raw update to database
+		/// Batch save entities in faster way<br/>
+		/// 快速批量保存实体<br/>
+		/// </summary>
+		public void FastBatchSave<T, TPrimaryKey>(IEnumerable<T> entities)
+			where T : class, IEntity<TPrimaryKey> {
+			var collection = GetCollection<T>();
+			collection.BulkWrite(entities.Select(e =>
+				new ReplaceOneModel<T>(MakeIdExpression(e), e) { IsUpsert = true }));
+		}
+
+		/// <summary>
+		/// Batch delete entities in faster way<br/>
+		/// 快速批量删除实体<br/>
+		/// </summary>
+		public long FastBatchDelete<T, TPrimaryKey>(Expression<Func<T, bool>> predicate)
+			where T : class, IEntity<TPrimaryKey>, new() {
+			var collection = GetCollection<T>();
+			var result = collection.DeleteMany(predicate);
+			return result.DeletedCount;
+		}
+
+		/// <summary>
+		/// Perform a raw update to database<br/>
+		/// 执行一个原生的更新操作<br/>
 		/// </summary>
 		public long RawUpdate(object query, object parameters) {
 			if (query is Command<int>) {
-				return Database.RunCommand(
+				return MongoDatabase.RunCommand(
 					(Command<int>)query, parameters as ReadPreference);
 			} else if (query is Command<long>) {
-				return Database.RunCommand(
+				return MongoDatabase.RunCommand(
 					(Command<long>)query, parameters as ReadPreference);
 			} else if (query is Func<IMongoDatabase, int>) {
-				return ((Func<IMongoDatabase, int>)query).Invoke(Database);
+				return ((Func<IMongoDatabase, int>)query).Invoke(MongoDatabase);
 			} else if (query is Func<IMongoDatabase, long>) {
-				return ((Func<IMongoDatabase, long>)query).Invoke(Database);
+				return ((Func<IMongoDatabase, long>)query).Invoke(MongoDatabase);
 			}
 			throw new ArgumentException(
 				"Unsupported query type, you can use Command<int> or Func<IMongoDatabase, int>");
 		}
 
 		/// <summary>
-		/// Perform a raw query to database
+		/// Perform a raw query to database<br/>
+		/// 执行一个原生的查询操作<br/>
 		/// </summary>
 		public IEnumerable<T> RawQuery<T>(object query, object parameters)
 			where T : class {
@@ -206,7 +260,7 @@ namespace ZKWeb.ORM.MongoDB {
 					(FilterDefinition<T>)query,
 					parameters as FindOptions).ToEnumerable();
 			} else if (query is Command<T>) {
-				return new[] { Database.RunCommand(
+				return new[] { MongoDatabase.RunCommand(
 					(Command<T>)query, parameters as ReadPreference)
 				};
 			} else if (query is BsonJavaScript[]) {

@@ -4,54 +4,55 @@ using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.Reflection;
 using ZKWeb.Web.ActionResults;
-using ZKWebStandard.Extensions;
-using ZKWebStandard.Web;
 
 namespace ZKWeb.Web {
 	/// <summary>
-	/// IController extension methods
+	/// IController extension methods<br/>
+	/// 控制器的扩展函数<br/>
 	/// </summary>
+	/// <seealso cref="ControllerManager"/>
+	/// <seealso cref="IController"/>
 	public static class IControllerExtensions {
 		/// <summary>
-		/// Method use to get request parameter
+		/// Get action parameter<br/>
+		/// 获取Action参数<br/>
 		/// </summary>
 		/// <typeparam name="T">Parameter type</typeparam>
 		/// <param name="name">Parameter name</param>
+		/// <param name="method">Method information</param>
+		/// <param name="parameterInfo">Parameter information</param>
 		/// <returns></returns>
-		private static T GetRequestParameter<T>(string name) {
-			// Get parameter from form or query key
-			var request = HttpManager.CurrentContext.Request;
-			var result = request.Get<T>(name);
-			if (result != null) {
-				return result;
-			}
-			// Get parameter from all form or query values if type isn't basic type
-			var typeInfo = typeof(T).GetTypeInfo();
-			if (!typeInfo.IsValueType && typeof(T) != typeof(string) &&
-				!(typeInfo.IsGenericType &&
-				typeInfo.GetGenericTypeDefinition() == typeof(Nullable<>))) {
-				return request.GetAllAs<T>();
-			}
-			// Return default value
-			return default(T);
+		internal static T GetActionParameter<T>(
+			string name, MethodInfo method, ParameterInfo parameterInfo) {
+			var provider = Application.Ioc.Resolve<IActionParameterProvider>();
+			return provider.GetParameter<T>(name, method, parameterInfo);
 		}
 
 		/// <summary>
-		/// Method information of GetRequestParameter
+		/// Method information of GetActionParameter<br/>
+		/// GetActionParameter的MethodInfo对象<br/>
 		/// </summary>
-		private static MethodInfo GetRequestParameterMethod =>
-			typeof(IControllerExtensions).GetMethod("GetRequestParameter",
+		private static MethodInfo GetActionParameterMethod =>
+			typeof(IControllerExtensions).GetMethod(nameof(GetActionParameter),
 				BindingFlags.NonPublic | BindingFlags.Static);
 
 		/// <summary>
-		/// Build action delegate from method information
-		/// Result type handling
-		/// - If method returns IActionResult, then use it
-		/// - If method returns string, then wrap result with PlainResult
-		/// - Otherwise wrap result with JsonResult
-		/// Parameters handling
-		/// - Get parameter by it's name from http request
-		/// - There no null check about parameters
+		/// Build action delegate from method information<br/>
+		/// Result type handling<br/>
+		/// - If method returns IActionResult, then use it<br/>
+		/// - If method returns string, then wrap result with PlainResult<br/>
+		/// - Otherwise wrap result with JsonResult<br/>
+		/// Parameters handling<br/>
+		/// - Get parameter by it's name from http request<br/>
+		/// - There no null check about parameters<br/>
+		/// 根据Action函数的信息构建Action委托<br/>
+		/// 结果类型的处理<br/>
+		/// - 如果函数返回IActionResult, 则使用返回的实例<br/>
+		/// - 如果函数返回string, 则包装结果到PlainResult<br/>
+		/// - 其他情况则包装结果到JsonResult<br/>
+		/// 参数的处理<br/>
+		/// - 根据参数的名称从http请求中获取参数值<br/>
+		/// - 不会检查参数是否为null<br/>
 		/// </summary>
 		/// <param name="controller">Controller instance</param>
 		/// <param name="method">Method information</param>
@@ -64,8 +65,10 @@ namespace ZKWeb.Web {
 			foreach (var parameter in parameters) {
 				// Get parameters from request by it's name
 				parametersExpr.Add(Expression.Call(null,
-					GetRequestParameterMethod.MakeGenericMethod(parameter.ParameterType),
-					Expression.Constant(parameter.Name)));
+					GetActionParameterMethod.MakeGenericMethod(parameter.ParameterType),
+					Expression.Constant(parameter.Name),
+					Expression.Constant(method),
+					Expression.Constant(parameter)));
 			}
 			// Determines if we need wrap the result
 			var actionResultType = typeof(IActionResult).GetTypeInfo();

@@ -1,49 +1,57 @@
-﻿using Dapper.Contrib.Extensions;
+﻿using Dapper.FluentMap;
+using Dapper.FluentMap.Dommel;
+using Dommel;
 using System;
 using System.Collections.Concurrent;
+using System.FastReflection;
 using System.Linq;
 using ZKWeb.Database;
-using ZKWebStandard.Extensions;
+using ZKWeb.ORM.Dapper.PropertyResolver;
 using ZKWebStandard.Utils;
 
 namespace ZKWeb.ORM.Dapper {
 	/// <summary>
-	/// Dapper entity mappings
+	/// Dapper entity mappings<br/>
+	/// Dapper的实体映射集合<br/>
 	/// </summary>
-	internal class DapperEntityMappings {
+	public class DapperEntityMappings {
 		/// <summary>
-		/// Type to mapping definition
+		/// Type to mapping definition<br/>
+		/// 类型到映射的定义<br/>
 		/// </summary>
-		private ConcurrentDictionary<Type, IDapperEntityMapping> Mappings { get; set; }
+		public ConcurrentDictionary<Type, IDapperEntityMapping> Mappings { get; protected set; }
 
 		/// <summary>
-		/// Initialize
+		/// Initialize<br/>
+		/// 初始化<br/>
 		/// </summary>
 		public DapperEntityMappings() {
 			Mappings = new ConcurrentDictionary<Type, IDapperEntityMapping>();
 			// Build entity mappings
 			var providers = Application.Ioc.ResolveMany<IEntityMappingProvider>();
-			var groupedProviders = providers.GroupBy(p =>
-				ReflectionUtils.GetGenericArguments(
-				p.GetType(), typeof(IEntityMappingProvider<>))[0]);
-			foreach (var group in groupedProviders) {
-				var builder = (IDapperEntityMapping)Activator.CreateInstance(
-					typeof(DapperEntityMappingBuilder<>).MakeGenericType(group.Key));
-				Mappings[group.Key] = builder;
+			var entityTypes = providers
+				.Select(p => ReflectionUtils.GetGenericArguments(
+					p.GetType(), typeof(IEntityMappingProvider<>))[0])
+				.Distinct().ToList();
+			foreach (var entityType in entityTypes) {
+				var builder = Activator.CreateInstance(
+					typeof(DapperEntityMappingBuilder<>).MakeGenericType(entityType));
+				Mappings[entityType] = (IDapperEntityMapping)builder;
 			}
-			// Set table name mapper
-			var previousMapper = SqlMapperExtensions.TableNameMapper;
-			SqlMapperExtensions.TableNameMapper = type => {
-				var mapping = Mappings.GetOrDefault(type);
-				if (mapping != null) {
-					return mapping.TableName;
+			// Setup dommel mappings
+			FluentMapper.Initialize(config => {
+				var addMap = config.GetType().FastGetMethod(nameof(config.AddMap));
+				foreach (var mapping in Mappings) {
+					addMap.MakeGenericMethod(mapping.Key).FastInvoke(config, mapping.Value);
 				}
-				return previousMapper?.Invoke(type);
-			};
+				config.ForDommel();
+				DommelMapper.SetPropertyResolver(new ZKWebPropertyResolver());
+			});
 		}
 
 		/// <summary>
-		/// Get mapping for entity type
+		/// Get mapping for entity type<br/>
+		/// 获取实体类型对应的映射<br/>
 		/// </summary>
 		/// <param name="type">Entity type</param>
 		/// <returns></returns>

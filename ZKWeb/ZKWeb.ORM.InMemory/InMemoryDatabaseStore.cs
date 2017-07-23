@@ -8,32 +8,40 @@ using ZKWebStandard.Utils;
 
 namespace ZKWeb.ORM.InMemory {
 	/// <summary>
-	/// A simple memory database store
-	/// It shouldn't use in production environment,
-	/// The performance will be very poor
+	/// A simple memory database store<br/>
+	/// It shouldn't use in production environment,<br/>
+	/// The performance will be very poor<br/>
+	/// 一个简单的内存数据库储存<br/>
+	/// 它不应该用在生产环境<br/>
+	/// 性能会很差<br/>
 	/// </summary>
-	internal class InMemoryDatabaseStore {
+	public class InMemoryDatabaseStore {
 		/// <summary>
-		/// Data store
+		/// Data store<br/>
+		/// 数据储存<br/>
 		/// { Type: { key: object } }
 		/// </summary>
-		private ConcurrentDictionary<Type, ConcurrentDictionary<object, object>>
+		protected ConcurrentDictionary<Type, ConcurrentDictionary<object, object>>
 			Store { get; set; }
 		/// <summary>
-		/// Type to mapping definition
+		/// Type to mapping definition<br/>
+		/// 类型到映射的定义<br/>
 		/// </summary>
-		private ConcurrentDictionary<Type, IInMemoryEntityMapping> Mappings { get; set; }
+		protected ConcurrentDictionary<Type, IInMemoryEntityMapping> Mappings { get; set; }
 		/// <summary>
-		/// Type to primary key sequence, only for integer type
+		/// Type to primary key sequence, only for integer type<br/>
+		/// 类型到主键的序号, 只供int主键使用<br/>
 		/// </summary>
-		private ConcurrentDictionary<Type, long> PrimaryKeySequence { get; set; }
+		protected ConcurrentDictionary<Type, long> PrimaryKeySequence { get; set; }
 		/// <summary>
-		/// The lock for the sequence increment
+		/// The lock for the sequence increment<br/>
+		/// 增加序号时使用的锁<br/>
 		/// </summary>
-		private object PrimaryKeySequenceLock { get; set; }
+		protected object PrimaryKeySequenceLock { get; set; }
 
 		/// <summary>
-		/// Initialize
+		/// Initialize<br/>
+		/// 初始化<br/>
 		/// </summary>
 		public InMemoryDatabaseStore() {
 			Store = new ConcurrentDictionary<Type, ConcurrentDictionary<object, object>>();
@@ -42,18 +50,20 @@ namespace ZKWeb.ORM.InMemory {
 			PrimaryKeySequenceLock = new object();
 			// Build entity mappings
 			var providers = Application.Ioc.ResolveMany<IEntityMappingProvider>();
-			var groupedProviders = providers.GroupBy(p =>
-				ReflectionUtils.GetGenericArguments(
-				p.GetType(), typeof(IEntityMappingProvider<>))[0]);
-			foreach (var group in groupedProviders) {
-				var builder = (IInMemoryEntityMapping)Activator.CreateInstance(
-					typeof(InMemoryEntityMappingBuilder<>).MakeGenericType(group.Key));
-				Mappings[group.Key] = builder;
+			var entityTypes = providers
+				.Select(p => ReflectionUtils.GetGenericArguments(
+					p.GetType(), typeof(IEntityMappingProvider<>))[0])
+				.Distinct().ToList();
+			foreach (var entityType in entityTypes) {
+				var builder = Activator.CreateInstance(
+					typeof(InMemoryEntityMappingBuilder<>).MakeGenericType(entityType));
+				Mappings[entityType] = (IInMemoryEntityMapping)builder;
 			}
 		}
 
 		/// <summary>
-		/// Get data store for specified type
+		/// Get data store for specified type<br/>
+		/// 获取类型对应的数据储存<br/>
 		/// </summary>
 		/// <param name="entityType">Entity type</param>
 		/// <returns></returns>
@@ -62,7 +72,8 @@ namespace ZKWeb.ORM.InMemory {
 		}
 
 		/// <summary>
-		/// Get the primary key object from entity
+		/// Get the primary key object from entity<br/>
+		/// 获取实体的主键对象<br/>
 		/// </summary>
 		public object GetPrimaryKey<T>(T entity) {
 			var mapping = Mappings[typeof(T)];
@@ -70,9 +81,12 @@ namespace ZKWeb.ORM.InMemory {
 		}
 
 		/// <summary>
-		/// If an entity have a integer or guid primary key, and it's empty,
-		/// then generate a new primary key for it.
-		/// Return the final primary key.
+		/// If an entity have a integer or guid primary key, and it's empty,<br/>
+		/// then generate a new primary key for it.<br/>
+		/// Return the final primary key.<br/>
+		/// 如果实体有一个数值或者guid主键, 并且主键为空<br/>
+		/// 则生成一个新的主键<br/>
+		/// 返回最终的主键<br/>
 		/// </summary>
 		public object EnsurePrimaryKey<T>(T entity) {
 			var mapping = Mappings[typeof(T)];

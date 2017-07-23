@@ -1,8 +1,11 @@
-1.2
-- Fork System.Drawing and libgdiplus completely
-- Support Range header
-- Replace Microsoft.EntityFrameworkCore.Design.Core
+2.0
+	- Update .Net standard requirement to 2.0
+	- Update Nhibernate to 5.0
+2.1~
+	- More execution performance improvement
+	- More database performance improvement
+	- Support publish to other platform
+		- Provide linux project creator and website publisher
 
 Undefined
-- Run all tests on linux
 - Run all tests on macos

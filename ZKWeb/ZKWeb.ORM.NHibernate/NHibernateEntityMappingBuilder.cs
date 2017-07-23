@@ -7,21 +7,29 @@ using System.Reflection;
 
 namespace ZKWeb.ORM.NHibernate {
 	/// <summary>
-	/// Defines a mapping for an entity
-	/// Useful links:
-	/// http://stackoverflow.com/questions/1152060/nhibernate-cascade-save-update
+	/// Defines a mapping for an entity<br/>
+	/// 定义指定类型的映射<br/>
+	/// See: http://stackoverflow.com/questions/1152060/nhibernate-cascade-save-update
 	/// </summary>
 	/// <typeparam name="T">Entity type</typeparam>
-	internal class NHibernateEntityMappingBuilder<T> :
-		ClassMap<T>, IEntityMappingBuilder<T>
+	public class NHibernateEntityMappingBuilder<T> :
+		ClassMap<T>,
+		IEntityMappingBuilder<T>
 		where T : class, IEntity {
 		/// <summary>
-		/// ORM name
+		/// ORM name<br/>
+		/// ORM名称<br/>
 		/// </summary>
-		public string ORM { get { return "NHibernate"; } }
+		public string ORM { get { return NHibernateDatabaseContext.ConstORM; } }
+		/// <summary>
+		/// Custom table name<br/>
+		/// 自定义表名<br/>
+		/// </summary>
+		protected string CustomTableName { get; set; }
 
 		/// <summary>
-		/// Initialize
+		/// Initialize<br/>
+		/// 初始化<br/>
 		/// </summary>
 		public NHibernateEntityMappingBuilder() {
 			// Configure with registered providers
@@ -29,10 +37,27 @@ namespace ZKWeb.ORM.NHibernate {
 			foreach (var provider in providers) {
 				provider.Configure(this);
 			}
+			// Set table name with registered handlers
+			var tableName = CustomTableName ?? typeof(T).Name;
+			var handlers = Application.Ioc.ResolveMany<IDatabaseInitializeHandler>();
+			foreach (var handler in handlers) {
+				handler.ConvertTableName(ref tableName);
+			}
+			base.Table(tableName);
 		}
 
 		/// <summary>
-		/// Specify the primary key for this entity
+		/// Specify the custom table name<br/>
+		/// 指定自定义表名<br/>
+		/// </summary>
+		/// <param name="tableName">The table name</param>
+		public void TableName(string tableName) {
+			CustomTableName = tableName;
+		}
+
+		/// <summary>
+		/// Specify the primary key for this entity<br/>
+		/// 指定实体的主键<br/>
 		/// </summary>
 		public void Id<TPrimaryKey>(
 			Expression<Func<T, TPrimaryKey>> memberExpression,
@@ -58,7 +83,8 @@ namespace ZKWeb.ORM.NHibernate {
 		}
 
 		/// <summary>
-		/// Create a member mapping
+		/// Create a member mapping<br/>
+		/// 创建成员映射<br/>
 		/// </summary>
 		public void Map<TMember>(
 			Expression<Func<T, TMember>> memberExpression,
@@ -100,7 +126,8 @@ namespace ZKWeb.ORM.NHibernate {
 		}
 
 		/// <summary>
-		/// Create a reference to another entity, this is a many-to-one relationship.
+		/// Create a reference to another entity, this is a many-to-one relationship.<br/>
+		/// 创建到其他实体的映射, 这是多对一的关系<br/>
 		/// </summary>
 		public void References<TOther>(
 			Expression<Func<T, TOther>> memberExpression,
@@ -127,7 +154,8 @@ namespace ZKWeb.ORM.NHibernate {
 		}
 
 		/// <summary>
-		/// Maps a collection of entities as a one-to-many relationship.
+		/// Maps a collection of entities as a one-to-many relationship.<br/>
+		/// 创建到实体集合的映射, 这是一对多的关系<br/>
 		/// </summary>
 		public void HasMany<TChild>(
 			Expression<Func<T, IEnumerable<TChild>>> memberExpression,
@@ -148,7 +176,8 @@ namespace ZKWeb.ORM.NHibernate {
 		}
 
 		/// <summary>
-		/// Maps a collection of entities as a many-to-many relationship.
+		/// Maps a collection of entities as a many-to-many relationship.<br/>
+		/// 创建到实体集合的映射, 这是多对多的关系<br/>
 		/// </summary>
 		public void HasManyToMany<TChild>(
 			Expression<Func<T, IEnumerable<TChild>>> memberExpression,

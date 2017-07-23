@@ -7,15 +7,18 @@ using System.Web;
 
 namespace ZKWeb.Hosting.AspNet {
 	/// <summary>
-	/// Http request wrapper for Asp.net
+	/// Http request wrapper for Asp.net<br/>
+	/// Asp.Net Http请求的包装类<br/>
 	/// </summary>
 	internal class AspNetHttpRequestWrapper : IHttpRequest {
 		/// <summary>
-		/// Parent http context
+		/// Parent http context<br/>
+		/// 所属的Http上下文<br/>
 		/// </summary>
 		protected AspNetHttpContextWrapper ParentContext { get; set; }
 		/// <summary>
-		/// Original http request
+		/// Original http request<br/>
+		/// 原始的Http请求<br/>
 		/// </summary>
 		protected HttpRequest OriginalRequest { get; set; }
 
@@ -115,7 +118,8 @@ namespace ZKWeb.Hosting.AspNet {
 		}
 
 		/// <summary>
-		/// Initialize
+		/// Initialize<br/>
+		/// 初始化<br/>
 		/// </summary>
 		/// <param name="parentContext">Parent http context</param>
 		/// <param name="originalRequest">Original http request</param>

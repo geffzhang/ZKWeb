@@ -13,41 +13,64 @@ using ZKWeb.Plugin.CompilerServices;
 using System.IO;
 using ZKWeb.Plugin.AssemblyLoaders;
 using System.Reflection;
+using ZKWeb.Server;
+using ZKWebStandard.Extensions;
 
 namespace ZKWeb.ORM.EFCore {
 	/// <summary>
-	/// Entity Framework Core database context factory
+	/// Entity Framework Core database context factory<br/>
+	/// Entity Framework Core的数据库上下文生成器<br/>
 	/// </summary>
-	internal class EFCoreDatabaseContextFactory : IDatabaseContextFactory {
+	public class EFCoreDatabaseContextFactory : IDatabaseContextFactory {
 		/// <summary>
-		/// Filename prefix for model snapshot
+		/// Filename prefix for model snapshot<br/>
+		/// 模型快照的文件名前缀<br/>
 		/// </summary>
-		private const string ModelSnapshotFilePrefix = "EFModelSnapshot_";
+		protected const string ModelSnapshotFilePrefix = "EFModelSnapshot_";
 		/// <summary>
-		/// Namespace for model snapshot
+		/// Namespace for model snapshot<br/>
+		/// 模型快照的命名空间<br/>
 		/// </summary>
-		private const string ModelSnapshotNamespace = "ZKWeb.ORM.EFCore.Migrations";
+		protected const string ModelSnapshotNamespace = "ZKWeb.ORM.EFCore.Migrations";
 		/// <summary>
-		/// Class name prefix for model snapshot
+		/// Class name prefix for model snapshot<br/>
+		/// 模型快照的类名前缀<br/>
 		/// </summary>
-		private const string ModelSnapshotClassPrefix = "Migration_";
+		protected const string ModelSnapshotClassPrefix = "Migration_";
 		/// <summary>
-		/// Database type
+		/// Database type<br/>
+		/// 数据库类型<br/>
 		/// </summary>
-		private string Database { get; set; }
+		protected string Database { get; set; }
 		/// <summary>
-		/// Connection string
+		/// Connection string<br/>
+		/// 连接字符串<br/>
 		/// </summary>
-		private string ConnectionString { get; set; }
+		protected string ConnectionString { get; set; }
 
 		/// <summary>
-		/// Initialize
+		/// Initialize<br/>
+		/// 初始化<br/>
 		/// </summary>
 		/// <param name="database">Database type</param>
 		/// <param name="connectionString">Connection string</param>
 		public EFCoreDatabaseContextFactory(string database, string connectionString) {
 			Database = database;
 			ConnectionString = connectionString;
+			// Check if database auto migration is disabled
+			var configManager = Application.Ioc.Resolve<WebsiteConfigManager>();
+			var noAutoMigration = configManager.WebsiteConfig.Extra.GetOrDefault<bool?>(
+				EFCoreExtraConfigKeys.DisableEFCoreDatabaseAutoMigration) ?? false;
+			if (!noAutoMigration) {
+				MigrateDatabase();
+			}
+		}
+
+		/// <summary>
+		/// Perform database migration<br/>
+		/// 迁移数据库<br/>
+		/// </summary>
+		protected void MigrateDatabase() {
 			// Prepare database migration
 			IModel initialModel = null;
 			using (var context = new EFCoreDatabaseContextBase(Database, ConnectionString)) {
@@ -70,12 +93,13 @@ namespace ZKWeb.ORM.EFCore {
 		}
 
 		/// <summary>
-		/// Create and apply the migration for relational database
+		/// Create and apply the migration for relational database<br/>
+		/// 创建并迁移关系数据库中的数据库<br/>
 		/// See: https://github.com/aspnet/EntityFramework/blob/master/src/Microsoft.EntityFrameworkCore.Relational/Storage/RelationalDatabaseCreator.cs
 		/// </summary>
 		/// <param name="context">Entity Framework Core database context</param>
 		/// <param name="initialModel">Initial model, only contains migration history</param>
-		private void MigrateRelationalDatabase(DbContext context, IModel initialModel) {
+		protected void MigrateRelationalDatabase(DbContext context, IModel initialModel) {
 			var serviceProvider = ((IInfrastructure<IServiceProvider>)context).Instance;
 			// Get the last migration model
 			var lastModel = initialModel;
@@ -139,7 +163,8 @@ namespace ZKWeb.ORM.EFCore {
 		}
 
 		/// <summary>
-		/// Create database context
+		/// Create database context<br/>
+		/// 创建数据库上下文<br/>
 		/// </summary>
 		/// <returns></returns>
 		public IDatabaseContext CreateContext() {

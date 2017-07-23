@@ -2,21 +2,29 @@
 
 namespace ZKWeb.Server {
 	/// <summary>
-	/// Website config manager
+	/// Website config manager<br/>
+	/// 网站配置管理器<br/>
 	/// </summary>
+	/// <example>
+	/// <code language="cs">
+	/// var websiteConfigManager = Application.Ioc.Resolve&lt;WebsiteConfigManager&gt;();
+	/// var config = websiteConfigManager.WebsiteConfig();
+	/// </code>
+	/// </example>
 	public class WebsiteConfigManager {
 		/// <summary>
-		/// Website configuration
+		/// Website configuration<br/>
+		/// 网站配置<br/>
 		/// </summary>
 		public virtual WebsiteConfig WebsiteConfig { get; protected set; }
 
 		/// <summary>
-		/// Load website configuration
+		/// Load website configuration<br/>
+		/// 加载网站配置<br/>
 		/// </summary>
-		internal static void Initialize() {
-			var configManager = Application.Ioc.Resolve<WebsiteConfigManager>();
+		internal protected virtual void Initialize() {
 			var pathConfig = Application.Ioc.Resolve<LocalPathConfig>();
-			configManager.WebsiteConfig = WebsiteConfig.FromFile(pathConfig.WebsiteConfigPath);
+			WebsiteConfig = WebsiteConfig.FromFile(pathConfig.WebsiteConfigPath);
 		}
 	}
 }

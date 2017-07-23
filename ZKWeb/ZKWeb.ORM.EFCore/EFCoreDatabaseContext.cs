@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.FastReflection;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Threading;
@@ -11,30 +12,43 @@ using ZKWebStandard.Utils;
 
 namespace ZKWeb.ORM.EFCore {
 	/// <summary>
-	/// Entity Framework Core database context
+	/// Entity Framework Core database context<br/>
+	/// Entity Framework Core的数据库上下文<br/>
 	/// </summary>
 	public class EFCoreDatabaseContext : EFCoreDatabaseContextBase, IDatabaseContext {
 		/// <summary>
-		/// Entity Framework Core transaction
+		/// Entity Framework Core transaction<br/>
+		/// Entity Framework Core的事务<br/>
 		/// </summary>
-		private IDbContextTransaction Transaction { get; set; }
+		protected IDbContextTransaction Transaction { get; set; }
 		/// <summary>
-		/// Transaction level counter
+		/// Transaction level counter<br/>
+		/// 事务的嵌套计数<br/>
 		/// </summary>
-		private int TransactionLevel;
+		protected int TransactionLevel;
 		/// <summary>
-		/// ORM name
+		/// ORM name<br/>
+		/// ORM名称<br/>
 		/// </summary>
 		public string ORM { get { return ConstORM; } }
 		internal const string ConstORM = "EFCore";
 		/// <summary>
-		/// Database type
+		/// Database type<br/>
+		/// 数据库类型<br/>
 		/// </summary>
 		string IDatabaseContext.Database { get { return databaseType; } }
-		private string databaseType;
+#pragma warning disable CS1591
+		protected string databaseType;
+#pragma warning restore CS1591
+		/// <summary>
+		/// Underlying database connection<br/>
+		/// 底层的数据库连接<br/>
+		/// </summary>
+		public object DbConnection { get { return Database.GetDbConnection(); } }
 
 		/// <summary>
-		/// Initialize
+		/// Initialize<br/>
+		/// 初始化<br/>
 		/// </summary>
 		/// <param name="database">Database type</param>
 		/// <param name="connectionString">Connection string</param>
@@ -46,7 +60,8 @@ namespace ZKWeb.ORM.EFCore {
 		}
 
 		/// <summary>
-		/// Configure entity model
+		/// Configure entity model<br/>
+		/// 配置实体模型<br/>
 		/// </summary>
 		/// <param name="modelBuilder">Model builder</param>
 		protected override void OnModelCreating(ModelBuilder modelBuilder) {
@@ -54,15 +69,19 @@ namespace ZKWeb.ORM.EFCore {
 			base.OnModelCreating(modelBuilder);
 			// Register entity mappings
 			var providers = Application.Ioc.ResolveMany<IEntityMappingProvider>();
-			var entityTypes = providers.Select(p =>
-				ReflectionUtils.GetGenericArguments(
-				p.GetType(), typeof(IEntityMappingProvider<>))[0]).ToList();
-			entityTypes.ForEach(t => Activator.CreateInstance(
-				typeof(EFCoreEntityMappingBuilder<>).MakeGenericType(t), modelBuilder));
+			var entityTypes = providers
+				.Select(p => ReflectionUtils.GetGenericArguments(
+					p.GetType(), typeof(IEntityMappingProvider<>))[0])
+				.Distinct().ToList();
+			foreach (var entityType in entityTypes) {
+				Activator.CreateInstance(
+					typeof(EFCoreEntityMappingBuilder<>).MakeGenericType(entityType), modelBuilder);
+			}
 		}
 
 		/// <summary>
-		/// Dispose context and transaction
+		/// Dispose context and transaction<br/>
+		/// 销毁上下文和事务<br/>
 		/// </summary>
 		public override void Dispose() {
 			Transaction?.Dispose();
@@ -71,7 +90,8 @@ namespace ZKWeb.ORM.EFCore {
 		}
 
 		/// <summary>
-		/// Begin a transaction
+		/// Begin a transaction<br/>
+		/// 开始一个事务<br/>
 		/// </summary>
 		public void BeginTransaction(IsolationLevel? isolationLevel = null) {
 			var level = Interlocked.Increment(ref TransactionLevel);
@@ -86,7 +106,8 @@ namespace ZKWeb.ORM.EFCore {
 		}
 
 		/// <summary>
-		/// Finish the transaction
+		/// Finish the transaction<br/>
+		/// 结束一个事务<br/>
 		/// </summary>
 		public void FinishTransaction() {
 			var level = Interlocked.Decrement(ref TransactionLevel);
@@ -105,7 +126,8 @@ namespace ZKWeb.ORM.EFCore {
 		}
 
 		/// <summary>
-		/// Get the query object for specific entity
+		/// Get the query object for specific entity type<br/>
+		/// 获取指定实体类型的查询对象<br/>
 		/// </summary>
 		public IQueryable<T> Query<T>()
 			where T : class, IEntity {
@@ -113,8 +135,10 @@ namespace ZKWeb.ORM.EFCore {
 		}
 
 		/// <summary>
-		/// Get single entity that matched the given predicate
-		/// It should return null if no matched entity found
+		/// Get single entity that matched the given predicate<br/>
+		/// It should return null if no matched entity found<br/>
+		/// 获取符合传入条件的单个实体<br/>
+		/// 如果无符合条件的实体应该返回null<br/>
 		/// </summary>
 		public T Get<T>(Expression<Func<T, bool>> predicate)
 			where T : class, IEntity {
@@ -122,7 +146,8 @@ namespace ZKWeb.ORM.EFCore {
 		}
 
 		/// <summary>
-		/// Get how many entities that matched the given predicate
+		/// Get how many entities that matched the given predicate<br/>
+		/// 获取符合传入条件的实体数量<br/>
 		/// </summary>
 		public long Count<T>(Expression<Func<T, bool>> predicate)
 			where T : class, IEntity {
@@ -130,30 +155,38 @@ namespace ZKWeb.ORM.EFCore {
 		}
 
 		/// <summary>
-		/// Insert or update entity
+		/// Insert or update entity<br/>
+		/// 插入或更新实体<br/>
 		/// </summary>
-		private void InsertOrUpdate<T>(T entity, Action<T> update = null)
+		protected void InsertOrUpdate<T>(T entity, Action<T> update = null)
 			where T : class, IEntity {
 			var entityInfo = Entry(entity);
+			update?.Invoke(entity);
 			if (entityInfo.State == EntityState.Detached) {
 				// It's not being tracked
 				if (entityInfo.IsKeySet) {
-					// The key is not default, mark all properties as modified
-					update?.Invoke(entity);
-					Update(entity);
+					// The key is not default, we're not sure it's in database or not
+					// check it first, it's rare so it shouldn't cause performance impact
+					var property = typeof(T).FastGetProperty(nameof(IEntity<object>.Id));
+					var id = property.FastGetValue(entity);
+					var expr = ExpressionUtils.MakeMemberEqualiventExpression<T>(property.Name, id);
+					if (Count(expr) > 0) {
+						Update(entity);
+					} else {
+						Add(entity);
+					}
 				} else {
 					// The key is default, set it's state to Added
-					update?.Invoke(entity);
 					Add(entity);
 				}
 			} else {
 				// It's being tracked, we don't need to attach it
-				update?.Invoke(entity);
 			}
 		}
 
 		/// <summary>
-		/// Save entity to database
+		/// Save entity to database<br/>
+		/// 保存实体到数据库<br/>
 		/// </summary>
 		public void Save<T>(ref T entity, Action<T> update = null)
 			where T : class, IEntity {
@@ -167,7 +200,8 @@ namespace ZKWeb.ORM.EFCore {
 		}
 
 		/// <summary>
-		/// Delete entity from database
+		/// Delete entity from database<br/>
+		/// 删除数据库中的实体<br/>
 		/// </summary>
 		public void Delete<T>(T entity)
 			where T : class, IEntity {
@@ -179,7 +213,8 @@ namespace ZKWeb.ORM.EFCore {
 		}
 
 		/// <summary>
-		/// Batch save entities
+		/// Batch save entities<br/>
+		/// 批量保存实体<br/>
 		/// </summary>
 		public void BatchSave<T>(ref IEnumerable<T> entities, Action<T> update = null)
 			where T : class, IEntity {
@@ -197,7 +232,8 @@ namespace ZKWeb.ORM.EFCore {
 		}
 
 		/// <summary>
-		/// Batch update entities
+		/// Batch update entities<br/>
+		/// 批量更新实体<br/>
 		/// </summary>
 		public long BatchUpdate<T>(Expression<Func<T, bool>> predicate, Action<T> update)
 			where T : class, IEntity {
@@ -207,7 +243,8 @@ namespace ZKWeb.ORM.EFCore {
 		}
 
 		/// <summary>
-		/// Batch delete entities
+		/// Batch delete entities<br/>
+		/// 批量删除实体<br/>
 		/// </summary>
 		public long BatchDelete<T>(Expression<Func<T, bool>> predicate, Action<T> beforeDelete)
 			where T : class, IEntity {
@@ -216,7 +253,7 @@ namespace ZKWeb.ORM.EFCore {
 			foreach (var entity in entities) {
 				beforeDelete?.Invoke(entity);
 				callbacks.ForEach(c => c.BeforeDelete(this, entity)); // notify before delete
-				Delete(entity);
+				Remove(entity);
 			}
 			SaveChanges(); // send commands to database
 			foreach (var entity in entities) {
@@ -226,14 +263,41 @@ namespace ZKWeb.ORM.EFCore {
 		}
 
 		/// <summary>
-		/// Perform a raw update to database
+		/// Batch save entities in faster way<br/>
+		/// 快速批量保存实体<br/>
+		/// </summary>
+		public void FastBatchSave<T, TPrimaryKey>(IEnumerable<T> entities)
+			where T : class, IEntity<TPrimaryKey> {
+			foreach (var entity in entities) {
+				InsertOrUpdate(entity);
+			}
+			SaveChanges(); // send commands to database
+		}
+
+		/// <summary>
+		/// Batch delete entities in faster way<br/>
+		/// 快速批量删除实体<br/>
+		/// </summary>
+		public long FastBatchDelete<T, TPrimaryKey>(Expression<Func<T, bool>> predicate)
+			where T : class, IEntity<TPrimaryKey>, new() {
+			var entities = Query<T>().Where(predicate).Select(t => new T() { Id = t.Id });
+			var count = entities.LongCount();
+			RemoveRange(entities);
+			SaveChanges(); // send commands to database
+			return count;
+		}
+
+		/// <summary>
+		/// Perform a raw update to database<br/>
+		/// 执行一个原生的更新操作<br/>
 		/// </summary>
 		public long RawUpdate(object query, object parameters) {
 			return Database.ExecuteSqlCommand((string)query, (object[])parameters);
 		}
 
 		/// <summary>
-		/// Perform a raw query to database
+		/// Perform a raw query to database<br/>
+		/// 执行一个原生的查询操作<br/>
 		/// </summary>
 		public IEnumerable<T> RawQuery<T>(object query, object parameters)
 			where T : class {

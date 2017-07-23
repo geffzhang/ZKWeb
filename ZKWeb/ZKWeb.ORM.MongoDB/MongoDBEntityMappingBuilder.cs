@@ -5,47 +5,64 @@ using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.Reflection;
 using ZKWeb.Database;
+using ZKWeb.Logging;
 using ZKWebStandard.Extensions;
 
 namespace ZKWeb.ORM.MongoDB {
 	/// <summary>
-	/// MongoDB entity mapping builder
-	/// Attention: The entity type can only be mapped once, the following mapping configuration will be ignored
+	/// MongoDB entity mapping builder<br/>
+	/// Attention: The entity type can only be mapped once, the following mapping configuration will be ignored<br/>
+	/// MongoDB的实体映射构建器<br/>
+	/// 注意: 各个实体类型全局只能映射一次, 后面的映射会被忽略<br/>
 	/// </summary>
 	/// <typeparam name="T">Entity type</typeparam>
-	internal class MongoDBEntityMappingBuilder<T> :
-		IEntityMappingBuilder<T>, IMongoDBEntityMapping
+	public class MongoDBEntityMappingBuilder<T> :
+		IEntityMappingBuilder<T>,
+		IMongoDBEntityMapping
 		where T : class, IEntity {
 		/// <summary>
-		/// Actions perform to bson class mapping
+		/// Actions perform to bson class mapping<br/>
+		/// 应用到Bson类型映射的操作<br/>
 		/// </summary>
-		private IList<Action<BsonClassMap<T>>> MapActions { get; set; }
+		protected IList<Action<BsonClassMap<T>>> MapActions { get; set; }
 		/// <summary>
-		/// Actions perform to data collection
+		/// Actions perform to data collection<br/>
+		/// 应用到数据集合的操作<br/>
 		/// </summary>
-		private IList<Action<IMongoCollection<T>>> CollectionActions { get; set; }
+		protected IList<Action<IMongoCollection<T>>> CollectionActions { get; set; }
 		/// <summary>
-		/// Collection name
+		/// Collection name<br/>
+		/// 数据集合名词<br/>
 		/// </summary>
 		public string CollectionName { get { return collectionName; } }
-		private string collectionName;
+#pragma warning disable CS1591
+		protected string collectionName;
+#pragma warning restore CS1591
 		/// <summary>
-		/// Id member
+		/// Id member<br/>
+		/// Id成员<br/>
 		/// </summary>
 		public MemberInfo IdMember { get { return idMember; } }
-		private MemberInfo idMember;
+#pragma warning disable CS1591
+		protected MemberInfo idMember;
+#pragma warning restore CS1591
 		/// <summary>
-		/// Ordinary members
+		/// Ordinary members<br/>
+		/// 普通成员<br/>
 		/// </summary>
 		public IEnumerable<MemberInfo> OrdinaryMembers { get { return ordinaryMembers; } }
-		private IList<MemberInfo> ordinaryMembers;
+#pragma warning disable CS1591
+		protected IList<MemberInfo> ordinaryMembers;
+#pragma warning restore CS1591
 		/// <summary>
-		/// ORM name
+		/// ORM name<br/>
+		/// ORM名称<br/>
 		/// </summary>
 		public string ORM { get { return MongoDBDatabaseContext.ConstORM; } }
 
 		/// <summary>
-		/// Initialize
+		/// Initialize<br/>
+		/// 初始化<br/>
 		/// </summary>
 		/// <param name="database">Database object</param>
 		public MongoDBEntityMappingBuilder(IMongoDatabase database) {
@@ -60,11 +77,13 @@ namespace ZKWeb.ORM.MongoDB {
 				provider.Configure(this);
 			}
 			// Register mapping
-			BsonClassMap.RegisterClassMap<T>(m => {
-				MapActions.ForEach(a => a(m));
-				m.SetIgnoreExtraElements(true);
-			});
-			// Get collection name with registered hanlders
+			if (!BsonClassMap.IsClassMapRegistered(typeof(T))) {
+				BsonClassMap.RegisterClassMap<T>(m => {
+					MapActions.ForEach(a => a(m));
+					m.SetIgnoreExtraElements(true);
+				});
+			}
+			// Convert collection name with registered hanlders
 			var handlers = Application.Ioc.ResolveMany<IDatabaseInitializeHandler>();
 			foreach (var handler in handlers) {
 				handler.ConvertTableName(ref collectionName);
@@ -77,7 +96,16 @@ namespace ZKWeb.ORM.MongoDB {
 		}
 
 		/// <summary>
-		/// Specify the primary key for this entity
+		/// Specify the custom table name<br/>
+		/// 指定自定义表名<br/>
+		/// </summary>
+		public void TableName(string tableName) {
+			collectionName = tableName;
+		}
+
+		/// <summary>
+		/// Specify the primary key for this entity<br/>
+		/// 指定实体的主键<br/>
 		/// </summary>
 		public void Id<TPrimaryKey>(
 			Expression<Func<T, TPrimaryKey>> memberExpression,
@@ -95,7 +123,8 @@ namespace ZKWeb.ORM.MongoDB {
 		}
 
 		/// <summary>
-		/// Create a member mapping
+		/// Create a member mapping<br/>
+		/// 创建成员映射<br/>
 		/// </summary>
 		public void Map<TMember>(
 			Expression<Func<T, TMember>> memberExpression,
@@ -132,33 +161,42 @@ namespace ZKWeb.ORM.MongoDB {
 		}
 
 		/// <summary>
-		/// Create a reference to another entity, this is a many-to-one relationship.
+		/// Create a reference to another entity, this is a many-to-one relationship.<br/>
+		/// 创建到其他实体的映射, 这是多对一的关系<br/>
 		/// </summary>
 		public void References<TOther>(
 			Expression<Func<T, TOther>> memberExpression,
 			EntityMappingOptions options)
 			where TOther : class {
-			throw new NotSupportedException("References is not supported with MongoDB");
+			// log error only, some functions may not work
+			var logManager = Application.Ioc.Resolve<LogManager>();
+			logManager.LogError($"References is unsupported with mongodb, expression: {memberExpression}");
 		}
 
 		/// <summary>
-		/// Maps a collection of entities as a one-to-many relationship.
+		/// Maps a collection of entities as a one-to-many relationship.<br/>
+		/// 创建到实体集合的映射, 这是一对多的关系<br/>
 		/// </summary>
 		public void HasMany<TChild>(
 			Expression<Func<T, IEnumerable<TChild>>> memberExpression,
 			EntityMappingOptions options)
 			where TChild : class {
-			throw new NotSupportedException("HasMany is not supported with MongoDB");
+			// log error only, some functions may not work
+			var logManager = Application.Ioc.Resolve<LogManager>();
+			logManager.LogError($"HasMany is unsupported with mongodb, expression: {memberExpression}");
 		}
 
 		/// <summary>
-		/// Maps a collection of entities as a many-to-many relationship.
+		/// Maps a collection of entities as a many-to-many relationship.<br/>
+		/// 创建到实体集合的映射, 这是多对多的关系<br/>
 		/// </summary>
 		public void HasManyToMany<TChild>(
 			Expression<Func<T, IEnumerable<TChild>>> memberExpression,
 			EntityMappingOptions options = null)
 			where TChild : class {
-			throw new NotSupportedException("HasManyToMany is not supported with MongoDB");
+			// log error only, some functions may not work
+			var logManager = Application.Ioc.Resolve<LogManager>();
+			logManager.LogError($"HasManyToMany is unsupported with mongodb, expression: {memberExpression}");
 		}
 	}
 }

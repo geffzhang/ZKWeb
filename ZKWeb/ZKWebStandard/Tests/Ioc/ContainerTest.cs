@@ -128,6 +128,18 @@ namespace ZKWebStandard.Tests.IocContainer {
 			}
 		}
 
+		public void RegisterSingleExport() {
+			using (var container = new Container()) {
+				container.RegisterExports(new[] { typeof(SingleExportImplementation) });
+				Assert.Equals(((InterfaceService)container.Resolve(
+					typeof(InterfaceService), IfUnresolved.Throw, null)).Name, "SingleExport");
+				Assert.Equals(((ClassService)container.Resolve(
+					typeof(ClassService), IfUnresolved.Throw, "a")).GetName(), "SingleExport");
+				Assert.Equals(((SingleExportImplementation)container.Resolve(
+					typeof(SingleExportImplementation), IfUnresolved.ReturnDefault, null)), null);
+			}
+		}
+
 		public void Unregister() {
 			using (var container = new Container()) {
 				container.RegisterExports(new[] { typeof(TransientImplementation) });
@@ -136,6 +148,20 @@ namespace ZKWebStandard.Tests.IocContainer {
 				container.Unregister<ClassService>("a");
 				Assert.Equals(
 					container.Resolve<ClassService>(IfUnresolved.ReturnDefault, "a"), null);
+			}
+		}
+
+		public void UnregisterImplementation() {
+			using (var container = new Container()) {
+				container.RegisterMany<TransientImplementation>(ReuseType.Transient, null, false);
+				container.RegisterMany<SingletonImplementation>(ReuseType.Singleton, null, false);
+				container.UnregisterImplementation<TransientImplementation>(null);
+				Assert.Equals(
+					container.Resolve<ClassService>(IfUnresolved.Throw, null).GetName(), "Singleton");
+				Assert.Equals(
+					container.Resolve<InterfaceService>(IfUnresolved.Throw, null).Name, "Singleton");
+				Assert.Equals(
+					container.Resolve<TransientImplementation>(IfUnresolved.ReturnDefault, null), null);
 			}
 		}
 
@@ -235,6 +261,14 @@ namespace ZKWebStandard.Tests.IocContainer {
 				Assert.IsTrue(instance.ClassServices.Any(s => s is TransientImplementation));
 				Assert.IsTrue(instance.ClassServices.Any(s => s is SingletonImplementation));
 				Assert.Equals(instance.InterfaceService.GetType(), typeof(TransientImplementation));
+				Assert.Equals(instance.TestResolveFailed, false);
+			}
+		}
+
+		public void ResolveFromInjectConstructor() {
+			using (IContainer container = new Container()) {
+				container.RegisterMany<TestResolveFromInjectConstructor>();
+				Assert.IsTrue(container.Resolve<TestResolveFromInjectConstructor>() != null);
 			}
 		}
 
@@ -265,16 +299,37 @@ namespace ZKWebStandard.Tests.IocContainer {
 			public override string GetName() { return Name; }
 		}
 
+		[Export(ServiceType = typeof(InterfaceService))]
+		[Export(ServiceType = typeof(ClassService), ContractKey = "a")]
+		public class SingleExportImplementation : ClassService, InterfaceService {
+			public string Name { get { return "SingleExport"; } }
+			public override string GetName() { return Name; }
+		}
+
 		[ExportMany]
 		public class TestResolveFromConstructor {
 			public IEnumerable<ClassService> ClassServices { get; set; }
 			public InterfaceService InterfaceService { get; set; }
+			public bool? TestResolveFailed { get; set; }
 
 			public TestResolveFromConstructor(
 				IEnumerable<ClassService> classServices,
-				InterfaceService interfaceService) {
+				InterfaceService interfaceService,
+				bool testResolveFailed) {
 				ClassServices = classServices;
 				InterfaceService = interfaceService;
+				TestResolveFailed = testResolveFailed;
+			}
+		}
+
+		[ExportMany]
+		public class TestResolveFromInjectConstructor {
+			public TestResolveFromInjectConstructor(int a) {
+				Assert.IsTrueWith(false, "choose wrong constructor");
+			}
+
+			[Inject]
+			public TestResolveFromInjectConstructor(string b) {
 			}
 		}
 	}

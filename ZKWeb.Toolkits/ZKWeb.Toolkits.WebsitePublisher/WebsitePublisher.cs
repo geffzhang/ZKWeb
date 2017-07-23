@@ -1,6 +1,7 @@
 ﻿using Newtonsoft.Json;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using ZKWeb.Toolkits.WebsitePublisher.Model;
 using ZKWeb.Toolkits.WebsitePublisher.Utils;
 
@@ -39,10 +40,12 @@ namespace ZKWeb.Toolkits.WebsitePublisher {
 			var webRoot = GetWebRoot();
 			var webConfigPath = Path.Combine(webRoot, "Web.config");
 			if (!File.Exists(webConfigPath)) {
-				Path.Combine(Parameters.WebRoot, "web.config"); // 照顾到大小写区分的文件系统
+				webConfigPath = Path.Combine(webRoot, "web.config"); // 照顾到大小写区分的文件系统
 			}
 			if (!File.Exists(webConfigPath)) {
-				throw new FileNotFoundException("web.config not found");
+				throw new FileNotFoundException("web.config not found, \r\n" +
+					"please choose the project directory contains `web.config`, " +
+					"for example: 'Hello.World\\src\\Hello.World.AspNetCore'");
 			}
 			return webConfigPath;
 		}
@@ -52,7 +55,7 @@ namespace ZKWeb.Toolkits.WebsitePublisher {
 		/// Asp.Net:
 		/// - Use WebRoot\bin
 		/// Asp.Net Core:
-		/// - Find directory contains "ZKWeb.dll", "release", "net461", but not contains "publish"
+		/// - Find directory contains "ZKWeb.dll", "release", framework
 		/// - Publish with .Net Core is not support yet
 		/// </summary>
 		/// <param name="isCore">Is Asp.Net Core</param>
@@ -62,16 +65,26 @@ namespace ZKWeb.Toolkits.WebsitePublisher {
 			var binDir = Path.Combine(webRoot, "bin");
 			if (!File.Exists(Path.Combine(binDir, "ZKWeb.dll"))) {
 				isCore = true;
-				var dllPath = Directory.EnumerateFiles(binDir, "ZKWeb.dll", SearchOption.AllDirectories)
+				var configuration = Parameters.Configuration.ToLower();
+				var framework = Parameters.Framework.ToLower();
+				var dllPaths = Directory.EnumerateFiles(binDir, "ZKWeb.dll", SearchOption.AllDirectories)
 					.Where(p => {
 						var relPath = p.Substring(webRoot.Length).ToLower();
-						return (relPath.Contains("release") &&
-							relPath.Contains("net461") && !relPath.Contains("publish"));
-					}).FirstOrDefault();
+						return relPath.Contains(configuration) && relPath.Contains(framework);
+					}).ToList();
+				// prefer directory not contains publish
+				var dllPath = dllPaths.FirstOrDefault(d => !d.Contains("publish"));
+				if (dllPath == null) {
+					dllPath = dllPaths.FirstOrDefault();
+				}
 				if (dllPath == null) {
 					throw new DirectoryNotFoundException(
-						"bin directory not found, please compile the project " +
-						"with release configuration first");
+						"Bin directory not found, please follow these instructions:\r\n" +
+						"First, please choose directory contains `web.config` as the `website root`, " +
+						"for example 'Hello.World\\src\\Hello.World.AspNetCore'\r\n" +
+						"Second, if your project type is Asp.Net or Owin, please compile it with `Release` configuration\r\n" +
+						"and if your project type is Asp.Net Core, you need to run the folowing command:\r\n" +
+						"dotnet publish -f netcoreapp1.1 -c Release -r win10-x64");
 				}
 				binDir = Path.GetDirectoryName(dllPath);
 			} else {
@@ -95,10 +108,16 @@ namespace ZKWeb.Toolkits.WebsitePublisher {
 		/// <param name="binDir">bin directory</param>
 		/// <returns></returns>
 		protected virtual string GetAspNetCoreLauncherPath(string binDir) {
-			var exeName = Directory.EnumerateFiles(
-				binDir, "*.exe", SearchOption.TopDirectoryOnly)
+			var exeName = Directory
+				.EnumerateFiles(binDir, "*.exe", SearchOption.TopDirectoryOnly)
 				.Select(path => Path.GetFileName(path))
 				.Where(name => !name.Contains(".vshost.")).FirstOrDefault();
+			if (string.IsNullOrEmpty(exeName)) {
+				exeName = Directory
+					.EnumerateFiles(binDir, "*.dll", SearchOption.TopDirectoryOnly)
+					.Select(path => path.Substring(0, path.Length - ".dll".Length))
+					.Where(path => File.Exists(path)).FirstOrDefault();
+			}
 			if (string.IsNullOrEmpty(exeName)) {
 				throw new FileNotFoundException("Asp.Net Core Launcher exe not found");
 			}
@@ -134,16 +153,24 @@ namespace ZKWeb.Toolkits.WebsitePublisher {
 			var binDir = GetBinDirectory(out isCore);
 			var configJsonPath = GetConfigJsonPath();
 			var outputDir = Path.Combine(Parameters.OutputDirectory, Parameters.OutputName);
+			// Remove App_Data under bin directory, because `dotnet publish` may copy this directory
+			var appDataDirToRemove = Path.Combine(binDir, "App_Data");
+			if (Directory.Exists(appDataDirToRemove)) {
+				Directory.Delete(appDataDirToRemove, true);
+			}
 			// Copy website binaries
+			var ignorePattern = string.IsNullOrEmpty(Parameters.IgnorePattern) ?
+				null : new Regex(Parameters.IgnorePattern);
 			if (!isCore) {
 				// Asp.Net: copy files to output\bin, and copy Global.asax
-				DirectoryUtils.CopyDirectory(binDir, Path.Combine(outputDir, "bin"));
+				DirectoryUtils.CopyDirectory(
+					binDir, Path.Combine(outputDir, "bin"), ignorePattern);
 				File.Copy(webConfigPath, Path.Combine(outputDir, "web.config"), true);
 				File.Copy(Path.Combine(webRoot, "Global.asax"),
 					Path.Combine(outputDir, "Global.asax"), true);
 			} else {
 				// Asp.Net Core: copy files to output\, and replace launcher path in web.config
-				DirectoryUtils.CopyDirectory(binDir, outputDir);
+				DirectoryUtils.CopyDirectory(binDir, outputDir, ignorePattern);
 				var webConfig = File.ReadAllText(webConfigPath);
 				webConfig = webConfig.Replace("%LAUNCHER_PATH%", GetAspNetCoreLauncherPath(binDir));
 				webConfig = webConfig.Replace("%LAUNCHER_ARGS%", "");
@@ -162,12 +189,12 @@ namespace ZKWeb.Toolkits.WebsitePublisher {
 			foreach (var pluginName in config.Plugins) {
 				var pluginDir = FindPluginDirectory(originalConfig, pluginName);
 				var outputPluginDir = Path.Combine(outputPluginRoot, pluginName);
-				DirectoryUtils.CopyDirectory(pluginDir, outputPluginDir);
-			}
-			// Remove src directory under plugins
-			foreach (var dir in Directory.EnumerateDirectories(
-				outputPluginRoot, "src", SearchOption.AllDirectories)) {
-				Directory.Delete(dir, true);
+				DirectoryUtils.CopyDirectory(pluginDir, outputPluginDir, ignorePattern);
+				// Remove src directory under plugin
+				var srcDirectory = Path.Combine(outputPluginDir, "src");
+				if (Directory.Exists(srcDirectory)) {
+					Directory.Delete(srcDirectory, true);
+				}
 			}
 		}
 	}

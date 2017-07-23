@@ -7,13 +7,20 @@ using ZKWebStandard.Utils;
 
 namespace ZKWeb.Cache {
 	/// <summary>
-	/// Automatic cache cleaner
+	/// Automatically clean the cache according to the preset conditions<br/>
+	/// 按预置条件自动清理缓存<br/>
 	/// </summary>
-	internal static class AutomaticCacheCleaner {
+	/// <example>
+	/// <code language="cs">
+	/// AutomaticCacheCleaner.Start();
+	/// </code>
+	/// </example>
+	public class AutomaticCacheCleaner {
 		/// <summary>
-		/// Start cleaner
+		/// Start clean thread<br/>
+		/// 启动清理线程<br/>
 		/// </summary>
-		internal static void Start() {
+		internal protected virtual void Start() {
 			// Read memory usage threshold settings.
 			// If no settings present, do not start the cleaner thread.
 			// Default check interval is 15s.

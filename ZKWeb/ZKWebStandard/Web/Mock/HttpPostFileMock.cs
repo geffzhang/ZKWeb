@@ -2,7 +2,8 @@
 
 namespace ZKWebStandard.Web.Mock {
 	/// <summary>
-	/// Http posted file mock
+	/// Http posted file mock<br/>
+	/// Http提交文件的模拟类<br/>
 	/// </summary>
 	public class HttpPostFileMock : IHttpPostedFile {
 #pragma warning disable CS1591
