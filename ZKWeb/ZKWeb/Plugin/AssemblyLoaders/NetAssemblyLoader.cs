@@ -1,13 +1,12 @@
-﻿#if !NETCORE
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using ZKWebStandard.Extensions;
 
 namespace ZKWeb.Plugin.AssemblyLoaders {
 	/// <summary>
-	/// Assembly loader for .Net Framework<br/>
-	/// .Net Framework使用的程序集加载器<br/>
+	/// Assembly loader for both .Net Core and .Net Framework<br/>
+	/// .Net Core和.Net Framework使用的程序集加载器<br/>
 	/// </summary>
 	internal class NetAssemblyLoader : AssemblyLoaderBase {
 		/// <summary>
@@ -52,6 +51,7 @@ namespace ZKWeb.Plugin.AssemblyLoaders {
 						assembly = Load(new AssemblyName(name + suffix));
 						break;
 					} catch {
+						// Retry next round
 					}
 				}
 				if (assembly == null) {
@@ -84,7 +84,9 @@ namespace ZKWeb.Plugin.AssemblyLoaders {
 		/// 根据文件路径加载程序集<br/>
 		/// </summary>
 		public override Assembly LoadFile(string path) {
+#pragma warning disable S3885 // "Assembly.Load" should be used
 			var assembly = Assembly.LoadFile(path);
+#pragma warning restore S3885 // "Assembly.Load" should be used
 			return HandleLoadedAssembly(assembly);
 		}
 
@@ -106,7 +108,9 @@ namespace ZKWeb.Plugin.AssemblyLoaders {
 			foreach (var plugin in pluginManager.Plugins) {
 				var path = plugin.ReferenceAssemblyPath(requireName.Name);
 				if (path != null) {
+#pragma warning disable S3885 // "Assembly.Load" should be used
 					return Assembly.LoadFrom(path);
+#pragma warning restore S3885 // "Assembly.Load" should be used
 				}
 			}
 			// It's not found, return null
@@ -114,4 +118,3 @@ namespace ZKWeb.Plugin.AssemblyLoaders {
 		}
 	}
 }
-#endif

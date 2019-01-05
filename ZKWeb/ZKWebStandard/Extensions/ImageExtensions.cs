@@ -1,7 +1,7 @@
 ﻿using System;
-using System.DrawingCore;
-using System.DrawingCore.Drawing2D;
-using System.DrawingCore.Imaging;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using ZKWebStandard.Utils;
@@ -32,8 +32,7 @@ namespace ZKWebStandard.Extensions {
 			var src = new Rectangle(0, 0, image.Width, image.Height);
 			var dst = new Rectangle(0, 0, width, height);
 			// Calculate destination rectangle by resize mode
-			if (mode == ImageResizeMode.Fixed) {
-			} else if (mode == ImageResizeMode.ByWidth) {
+			if (mode == ImageResizeMode.ByWidth) {
 				height = (int)((decimal)src.Height / src.Width * dst.Width);
 				dst.Height = height;
 			} else if (mode == ImageResizeMode.ByHeight) {
@@ -180,7 +179,7 @@ namespace ZKWebStandard.Extensions {
 		/// </example>
 		public static void SaveAuto(this Image image, string filename, long quality) {
 			PathUtils.EnsureParentDirectory(filename);
-			var extension = Path.GetExtension(filename).ToLower();
+			var extension = Path.GetExtension(filename).ToLowerInvariant();
 			using (var stream = new FileStream(filename, FileMode.OpenOrCreate, FileAccess.Write)) {
 				image.SaveAuto(stream, extension, quality);
 			}

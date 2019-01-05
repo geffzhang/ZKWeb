@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
 using ZKWeb.Database;
@@ -54,14 +55,15 @@ namespace ZKWeb.ORM.InMemory {
 		/// Initialize<br/>
 		/// 初始化<br/>
 		/// </summary>
-		public InMemoryEntityMappingBuilder() {
+		public InMemoryEntityMappingBuilder(
+			IEnumerable<IDatabaseInitializeHandler> handlers,
+			IEnumerable<IEntityMappingProvider> providers) {
 			OrdinaryMembers = new List<MemberInfo>();
 			ManyToOneMembers = new List<MemberInfo>();
 			OneToManyMembers = new List<MemberInfo>();
 			ManyToManyMembers = new List<MemberInfo>();
 			// Configure with registered providers
-			var providers = Application.Ioc.ResolveMany<IEntityMappingProvider<T>>();
-			foreach (var provider in providers) {
+			foreach (var provider in providers.OfType<IEntityMappingProvider<T>>()) {
 				provider.Configure(this);
 			}
 		}
@@ -81,7 +83,7 @@ namespace ZKWeb.ORM.InMemory {
 		/// </summary>
 		public void Id<TPrimaryKey>(
 			Expression<Func<T, TPrimaryKey>> memberExpression,
-			EntityMappingOptions options) {
+			EntityMappingOptions options = null) {
 			IdMember = ((MemberExpression)memberExpression.Body).Member;
 		}
 
@@ -91,7 +93,7 @@ namespace ZKWeb.ORM.InMemory {
 		/// </summary>
 		public void Map<TMember>(
 			Expression<Func<T, TMember>> memberExpression,
-			EntityMappingOptions options) {
+			EntityMappingOptions options = null) {
 			OrdinaryMembers.Add(((MemberExpression)memberExpression.Body).Member);
 		}
 
@@ -101,7 +103,7 @@ namespace ZKWeb.ORM.InMemory {
 		/// </summary>
 		public void References<TOther>(
 			Expression<Func<T, TOther>> memberExpression,
-			EntityMappingOptions options)
+			EntityMappingOptions options = null)
 			where TOther : class {
 			ManyToOneMembers.Add(((MemberExpression)memberExpression.Body).Member);
 		}
@@ -112,7 +114,7 @@ namespace ZKWeb.ORM.InMemory {
 		/// </summary>
 		public void HasMany<TChild>(
 			Expression<Func<T, IEnumerable<TChild>>> memberExpression,
-			EntityMappingOptions options)
+			EntityMappingOptions options = null)
 			where TChild : class {
 			OneToManyMembers.Add(((MemberExpression)memberExpression.Body).Member);
 		}

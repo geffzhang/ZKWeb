@@ -71,6 +71,7 @@ namespace ZKWeb.Hosting.AspNetCore {
 		public int RemotePort {
 			get { return ParentContext.Connection.RemotePort; }
 		}
+		public IDictionary<string, object> CustomParameters { get; }
 
 		public string GetCookie(string key) {
 			return CoreRequest.Cookies[key];
@@ -90,7 +91,9 @@ namespace ZKWeb.Hosting.AspNetCore {
 		}
 		public IList<string> GetFormValue(string key) {
 			if (!ContainsFormValues.Value) {
+#pragma warning disable S1168 // Empty arrays and collections should be returned instead of null
 				return null;
+#pragma warning restore S1168 // Empty arrays and collections should be returned instead of null
 			}
 			return CoreRequest.Form[key];
 		}
@@ -150,6 +153,7 @@ namespace ZKWeb.Hosting.AspNetCore {
 				return (contentType == "application/x-www-form-urlencoded" ||
 					contentType == "multipart/form-data");
 			});
+			CustomParameters = new Dictionary<string, object>();
 		}
 	}
 }

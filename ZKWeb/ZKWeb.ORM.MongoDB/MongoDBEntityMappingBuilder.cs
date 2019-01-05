@@ -2,6 +2,7 @@
 using MongoDB.Driver;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
 using ZKWeb.Database;
@@ -64,16 +65,17 @@ namespace ZKWeb.ORM.MongoDB {
 		/// Initialize<br/>
 		/// 初始化<br/>
 		/// </summary>
-		/// <param name="database">Database object</param>
-		public MongoDBEntityMappingBuilder(IMongoDatabase database) {
+		public MongoDBEntityMappingBuilder(
+			IMongoDatabase database,
+			IEnumerable<IDatabaseInitializeHandler> handlers,
+			IEnumerable<IEntityMappingProvider> providers) {
 			MapActions = new List<Action<BsonClassMap<T>>>();
 			CollectionActions = new List<Action<IMongoCollection<T>>>();
 			collectionName = typeof(T).Name;
 			idMember = null;
 			ordinaryMembers = new List<MemberInfo>();
 			// Configure with registered provider
-			var providers = Application.Ioc.ResolveMany<IEntityMappingProvider<T>>();
-			foreach (var provider in providers) {
+			foreach (var provider in providers.OfType<IEntityMappingProvider<T>>()) {
 				provider.Configure(this);
 			}
 			// Register mapping
@@ -84,7 +86,6 @@ namespace ZKWeb.ORM.MongoDB {
 				});
 			}
 			// Convert collection name with registered hanlders
-			var handlers = Application.Ioc.ResolveMany<IDatabaseInitializeHandler>();
 			foreach (var handler in handlers) {
 				handler.ConvertTableName(ref collectionName);
 			}
@@ -109,7 +110,7 @@ namespace ZKWeb.ORM.MongoDB {
 		/// </summary>
 		public void Id<TPrimaryKey>(
 			Expression<Func<T, TPrimaryKey>> memberExpression,
-			EntityMappingOptions options) {
+			EntityMappingOptions options = null) {
 			// Unsupported options: Length, Unique, Nullable
 			// Index, CustomSqlType, CascadeDelete, WithSerialization
 			options = options ?? new EntityMappingOptions();
@@ -117,7 +118,7 @@ namespace ZKWeb.ORM.MongoDB {
 			MapActions.Add(m => {
 				var memberMap = m.MapIdMember(memberExpression);
 				if (!string.IsNullOrEmpty(options.Column)) {
-					memberMap = memberMap.SetElementName(options.Column);
+					memberMap.SetElementName(options.Column);
 				}
 			});
 		}
@@ -128,7 +129,7 @@ namespace ZKWeb.ORM.MongoDB {
 		/// </summary>
 		public void Map<TMember>(
 			Expression<Func<T, TMember>> memberExpression,
-			EntityMappingOptions options) {
+			EntityMappingOptions options = null) {
 			// Unsupported options: Length, CustomSqlType, CascadeDelete, WithSerialization
 			options = options ?? new EntityMappingOptions();
 			ordinaryMembers.Add(((MemberExpression)memberExpression.Body).Member);
@@ -138,9 +139,9 @@ namespace ZKWeb.ORM.MongoDB {
 					memberMap = memberMap.SetElementName(options.Column);
 				}
 				if (options.Nullable == true) {
-					memberMap = memberMap.SetIsRequired(true);
+					memberMap.SetIsRequired(true);
 				} else if (options.Nullable == false) {
-					memberMap = memberMap.SetIsRequired(false);
+					memberMap.SetIsRequired(false);
 				}
 			});
 			if (options.Unique == true || !string.IsNullOrEmpty(options.Index)) {
@@ -150,12 +151,13 @@ namespace ZKWeb.ORM.MongoDB {
 						Expression.Lambda<Func<T, object>>(
 							Expression.Convert(memberExpression.Body, typeof(object)),
 							memberExpression.Parameters));
-					var indxOptions = new CreateIndexOptions() {
+					var indexOptions = new CreateIndexOptions() {
 						Background = true,
 						Unique = options.Unique,
 						Sparse = !options.Unique // ignore null member on indexing
 					};
-					c.Indexes.CreateOne(keys, indxOptions);
+					var model = new CreateIndexModel<T>(keys, indexOptions);
+					c.Indexes.CreateOne(model);
 				});
 			}
 		}
@@ -166,7 +168,7 @@ namespace ZKWeb.ORM.MongoDB {
 		/// </summary>
 		public void References<TOther>(
 			Expression<Func<T, TOther>> memberExpression,
-			EntityMappingOptions options)
+			EntityMappingOptions options = null)
 			where TOther : class {
 			// log error only, some functions may not work
 			var logManager = Application.Ioc.Resolve<LogManager>();
@@ -179,7 +181,7 @@ namespace ZKWeb.ORM.MongoDB {
 		/// </summary>
 		public void HasMany<TChild>(
 			Expression<Func<T, IEnumerable<TChild>>> memberExpression,
-			EntityMappingOptions options)
+			EntityMappingOptions options = null)
 			where TChild : class {
 			// log error only, some functions may not work
 			var logManager = Application.Ioc.Resolve<LogManager>();

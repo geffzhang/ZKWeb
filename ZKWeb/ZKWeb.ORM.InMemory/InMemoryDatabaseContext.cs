@@ -4,13 +4,16 @@ using System.Data;
 using System.Linq;
 using System.Linq.Expressions;
 using ZKWeb.Database;
+using ZKWebStandard.Ioc;
 
 namespace ZKWeb.ORM.InMemory {
+#pragma warning disable S3881 // "IDisposable" should be implemented correctly
 	/// <summary>
 	/// InMemory database context<br/>
 	/// 内存数据库的上下文<br/>
 	/// </summary>
 	public class InMemoryDatabaseContext : IDatabaseContext {
+#pragma warning restore S3881 // "IDisposable" should be implemented correctly
 		/// <summary>
 		/// The database object<br/>
 		/// 数据库对象<br/>
@@ -34,6 +37,11 @@ namespace ZKWeb.ORM.InMemory {
 		/// 底层的数据库连接<br/>
 		/// </summary>
 		public object DbConnection { get { return null; } }
+		/// <summary>
+		/// Database command logger<br/>
+		/// 数据库命令记录器<br/>
+		/// </summary>
+		public IDatabaseCommandLogger CommandLogger { get; set; }
 
 		/// <summary>
 		/// Initialize<br/>
@@ -41,25 +49,26 @@ namespace ZKWeb.ORM.InMemory {
 		/// </summary>
 		public InMemoryDatabaseContext(InMemoryDatabaseStore store) {
 			Store = store;
+			CommandLogger = Application.Ioc.Resolve<IDatabaseCommandLogger>(IfUnresolved.ReturnDefault);
 		}
 
 		/// <summary>
 		/// Do Nothing<br/>
 		/// 不做任何事情<br/>
 		/// </summary>
-		public void Dispose() { }
+		public void Dispose() { /* nothing to do */ }
 
 		/// <summary>
 		/// Do Nothing<br/>
 		/// 不做任何事情<br/>
 		/// </summary>
-		public void BeginTransaction(IsolationLevel? isolationLevel) { }
+		public void BeginTransaction(IsolationLevel? isolationLevel = null) { /* nothing to do */ }
 
 		/// <summary>
 		/// Do Nothing<br/>
 		/// 不做任何事情<br/>
 		/// </summary>
-		public void FinishTransaction() { }
+		public void FinishTransaction() { /* nothing to do */ }
 
 		/// <summary>
 		/// Get the query object for specific entity type<br/>
@@ -140,14 +149,14 @@ namespace ZKWeb.ORM.InMemory {
 			var entities = Query<T>().Where(predicate).ToList();
 			var entitiesIterator = entities.AsEnumerable();
 			BatchSave(ref entitiesIterator, update);
-			return entities.Count();
+			return entities.Count;
 		}
 
 		/// <summary>
 		/// Batch delete entities<br/>
 		/// 批量删除实体<br/>
 		/// </summary>
-		public long BatchDelete<T>(Expression<Func<T, bool>> predicate, Action<T> beforeDelete)
+		public long BatchDelete<T>(Expression<Func<T, bool>> predicate, Action<T> beforeDelete = null)
 			where T : class, IEntity {
 			var entities = Query<T>().Where(predicate).ToList();
 			entities.ForEach(e => { beforeDelete?.Invoke(e); Delete(e); });

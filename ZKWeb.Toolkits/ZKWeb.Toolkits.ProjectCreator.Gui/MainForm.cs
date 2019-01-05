@@ -2,6 +2,7 @@
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using ZKWeb.Toolkits.ProjectCreator.Gui.Properties;
 using ZKWeb.Toolkits.ProjectCreator.Gui.Utils;
 using ZKWeb.Toolkits.ProjectCreator.Model;
 
@@ -24,6 +25,7 @@ namespace ZKWeb.Toolkits.ProjectCreator.Gui {
 		}
 
 		private void onDatabaseCheckedChanged(object sender, EventArgs e) {
+			tbConnectionString.Text = "";
 			if (rbMSSQL.Checked) {
 				tbConnectionString.Text = "Server=127.0.0.1;Database=test_db;User Id=test_user;Password=123456;";
 			} else if (rbMySQL.Checked) {
@@ -32,12 +34,8 @@ namespace ZKWeb.Toolkits.ProjectCreator.Gui {
 				tbConnectionString.Text = "Server=127.0.0.1;Port=5432;Database=test_db;User Id=test_user;Password=123456;";
 			} else if (rbSQLite.Checked) {
 				tbConnectionString.Text = "Data Source={{App_Data}}/test.db;";
-			} else if (rbInMemory.Checked) {
-				tbConnectionString.Text = "";
 			} else if (rbMongoDB.Checked) {
-				tbConnectionString.Text = "mongodb://test_user:123456@127.0.0.1:27017/test_db";
-			} else {
-				tbConnectionString.Text = "";
+				tbConnectionString.Text = "mongodb://test_user:123456@127.0.0.1:27017/test_db?authSource=admin";
 			}
 		}
 
@@ -61,7 +59,7 @@ namespace ZKWeb.Toolkits.ProjectCreator.Gui {
 			var connectionString = tbConnectionString.Text;
 			try {
 				DatabaseUtils.TestConnectionString(database, connectionString);
-				MessageBox.Show("Success");
+				MessageBox.Show(Resources.TestSuccessfully);
 			} catch (Exception ex) {
 				MessageBox.Show(ex.Message);
 			}
@@ -96,7 +94,7 @@ namespace ZKWeb.Toolkits.ProjectCreator.Gui {
 				parameters.OutputDirectory = tbOutputDirectory.Text;
 				var creator = new ProjectCreator(parameters);
 				await Task.Run(() => creator.CreateProject());
-				MessageBox.Show("Success");
+				MessageBox.Show(Resources.CreatedSuccessfully);
 			} catch (Exception ex) {
 				MessageBox.Show(ex.Message);
 			} finally {

@@ -3,6 +3,7 @@ using Dapper.FluentMap.Dommel;
 using Dommel;
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.FastReflection;
 using System.Linq;
 using ZKWeb.Database;
@@ -25,28 +26,30 @@ namespace ZKWeb.ORM.Dapper {
 		/// Initialize<br/>
 		/// 初始化<br/>
 		/// </summary>
-		public DapperEntityMappings() {
+		public DapperEntityMappings(
+			IEnumerable<IDatabaseInitializeHandler> handlers,
+			IEnumerable<IEntityMappingProvider> providers) {
 			Mappings = new ConcurrentDictionary<Type, IDapperEntityMapping>();
 			// Build entity mappings
-			var providers = Application.Ioc.ResolveMany<IEntityMappingProvider>();
-			var entityTypes = providers
-				.Select(p => ReflectionUtils.GetGenericArguments(
+			var entityProviders = providers
+				.GroupBy(p => ReflectionUtils.GetGenericArguments(
 					p.GetType(), typeof(IEntityMappingProvider<>))[0])
-				.Distinct().ToList();
-			foreach (var entityType in entityTypes) {
+				.ToList();
+			foreach (var group in entityProviders) {
 				var builder = Activator.CreateInstance(
-					typeof(DapperEntityMappingBuilder<>).MakeGenericType(entityType));
-				Mappings[entityType] = (IDapperEntityMapping)builder;
+					typeof(DapperEntityMappingBuilder<>).MakeGenericType(group.Key),
+					handlers, group.AsEnumerable());
+				Mappings[group.Key] = (IDapperEntityMapping)builder;
 			}
-			// Setup dommel mappings
+			// Setup dommel
 			FluentMapper.Initialize(config => {
 				var addMap = config.GetType().FastGetMethod(nameof(config.AddMap));
 				foreach (var mapping in Mappings) {
 					addMap.MakeGenericMethod(mapping.Key).FastInvoke(config, mapping.Value);
 				}
 				config.ForDommel();
-				DommelMapper.SetPropertyResolver(new ZKWebPropertyResolver());
 			});
+			DommelMapper.SetPropertyResolver(new ZKWebPropertyResolver());
 		}
 
 		/// <summary>

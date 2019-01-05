@@ -1,5 +1,8 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -8,6 +11,7 @@ using System.Linq;
 using System.Linq.Expressions;
 using System.Threading;
 using ZKWeb.Database;
+using ZKWebStandard.Ioc;
 using ZKWebStandard.Utils;
 
 namespace ZKWeb.ORM.EFCore {
@@ -45,18 +49,46 @@ namespace ZKWeb.ORM.EFCore {
 		/// 底层的数据库连接<br/>
 		/// </summary>
 		public object DbConnection { get { return Database.GetDbConnection(); } }
+		/// <summary>
+		/// Database Initialize Handlers<br/>
+		/// 数据库初始化处理器的列表<br/>
+		/// </summary>
+		protected IList<IDatabaseInitializeHandler> Handlers { get; set; }
+		/// <summary>
+		/// Entity Mapping Providers<br/>
+		/// 实体映射构建器的列表<br/>
+		/// </summary>
+		protected IList<IEntityMappingProvider> Providers { get; set; }
+		/// <summary>
+		/// Database context pool<br/>
+		/// 数据库上下文的缓存池<br/>
+		/// </summary>
+		protected internal EFCoreDatabaseContextPool Pool { get; set; }
+		/// <summary>
+		/// Database command logger<br/>
+		/// 数据库命令记录器<br/>
+		/// </summary>
+		public IDatabaseCommandLogger CommandLogger { get; set; }
 
 		/// <summary>
 		/// Initialize<br/>
 		/// 初始化<br/>
 		/// </summary>
-		/// <param name="database">Database type</param>
-		/// <param name="connectionString">Connection string</param>
-		public EFCoreDatabaseContext(string database, string connectionString)
-			: base(database, connectionString) {
+		public EFCoreDatabaseContext(
+			string database, string connectionString,
+			IList<IDatabaseInitializeHandler> handlers,
+			IList<IEntityMappingProvider> providers) :
+			base(database, connectionString) {
 			Transaction = null;
 			TransactionLevel = 0;
 			databaseType = database;
+			Handlers = handlers;
+			Providers = providers;
+			CommandLogger = Application.Ioc.Resolve<IDatabaseCommandLogger>(IfUnresolved.ReturnDefault);
+			// Register logger
+			var serviceProvider = this.GetInfrastructure<IServiceProvider>();
+			var loggerFactory = serviceProvider.GetService<ILoggerFactory>();
+			loggerFactory.AddProvider(new EFCoreLoggerProvider(this));
 		}
 
 		/// <summary>
@@ -68,25 +100,29 @@ namespace ZKWeb.ORM.EFCore {
 			// Call base method
 			base.OnModelCreating(modelBuilder);
 			// Register entity mappings
-			var providers = Application.Ioc.ResolveMany<IEntityMappingProvider>();
-			var entityTypes = providers
-				.Select(p => ReflectionUtils.GetGenericArguments(
+			var entityProviders = Providers
+				.GroupBy(p => ReflectionUtils.GetGenericArguments(
 					p.GetType(), typeof(IEntityMappingProvider<>))[0])
-				.Distinct().ToList();
-			foreach (var entityType in entityTypes) {
+				.ToList();
+			foreach (var group in entityProviders) {
 				Activator.CreateInstance(
-					typeof(EFCoreEntityMappingBuilder<>).MakeGenericType(entityType), modelBuilder);
+					typeof(EFCoreEntityMappingBuilder<>).MakeGenericType(group.Key),
+					modelBuilder, Handlers, group.AsEnumerable());
 			}
 		}
 
 		/// <summary>
-		/// Dispose context and transaction<br/>
-		/// 销毁上下文和事务<br/>
+		/// Dispose transaction, if pool exist then try return to pool, otherwise dispose the context<br/>
+		/// 释放事务, 如果池存在则尝试返回给池, 否则释放上下文<br/>
 		/// </summary>
 		public override void Dispose() {
 			Transaction?.Dispose();
 			Transaction = null;
-			base.Dispose();
+			if (Pool != null && Pool.Return(this)) {
+				// Returned to pool
+			} else {
+				base.Dispose();
+			}
 		}
 
 		/// <summary>
@@ -129,7 +165,7 @@ namespace ZKWeb.ORM.EFCore {
 		/// Get the query object for specific entity type<br/>
 		/// 获取指定实体类型的查询对象<br/>
 		/// </summary>
-		public IQueryable<T> Query<T>()
+		public new IQueryable<T> Query<T>()
 			where T : class, IEntity {
 			return Set<T>();
 		}
@@ -246,7 +282,7 @@ namespace ZKWeb.ORM.EFCore {
 		/// Batch delete entities<br/>
 		/// 批量删除实体<br/>
 		/// </summary>
-		public long BatchDelete<T>(Expression<Func<T, bool>> predicate, Action<T> beforeDelete)
+		public long BatchDelete<T>(Expression<Func<T, bool>> predicate, Action<T> beforeDelete = null)
 			where T : class, IEntity {
 			var entities = Query<T>().Where(predicate).ToList();
 			var callbacks = Application.Ioc.ResolveMany<IEntityOperationHandler<T>>().ToList();

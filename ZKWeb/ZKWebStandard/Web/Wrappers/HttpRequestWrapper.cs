@@ -51,6 +51,9 @@ namespace ZKWebStandard.Web.Wrappers {
 		public virtual string Scheme {
 			get { return OriginalRequest.Scheme; }
 		}
+		public virtual IDictionary<string, object> CustomParameters {
+			get { return OriginalRequest.CustomParameters; }
+		}
 		public virtual string GetCookie(string key) {
 			return OriginalRequest.GetCookie(key);
 		}
@@ -82,7 +85,7 @@ namespace ZKWebStandard.Web.Wrappers {
 			return OriginalRequest.GetPostedFiles();
 		}
 
-		public HttpRequestWrapper(IHttpRequest originalRequest) {
+		protected HttpRequestWrapper(IHttpRequest originalRequest) {
 			OriginalRequest = originalRequest;
 		}
 #pragma warning restore CS1591

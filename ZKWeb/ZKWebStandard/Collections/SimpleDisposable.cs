@@ -2,6 +2,7 @@
 using System.Threading;
 
 namespace ZKWebStandard.Collections {
+#pragma warning disable S3881 // "IDisposable" should be implemented correctly
 	/// <summary>
 	/// Simple dispose object<br/>
 	/// Execute the given method when disposed,<br/>
@@ -18,6 +19,7 @@ namespace ZKWebStandard.Collections {
 	/// </code>
 	/// </example>
 	public class SimpleDisposable : IDisposable {
+#pragma warning restore S3881 // "IDisposable" should be implemented correctly
 		/// <summary>
 		/// The function that is called when dispose<br/>
 		/// 在销毁时调用的函数<br/>
@@ -27,10 +29,10 @@ namespace ZKWebStandard.Collections {
 		/// Is method executed<br/>
 		/// 函数是否已执行<br/>
 		/// </summary>
-		protected int Disposed = 0;
+		protected int Disposed;
 
 		/// <summary>
-		/// Initialized<br/>
+		/// Initialize<br/>
 		/// 初始化<br/>
 		/// </summary>
 		public SimpleDisposable(Action onDispose) {
@@ -45,14 +47,6 @@ namespace ZKWebStandard.Collections {
 			if (Interlocked.Exchange(ref Disposed, 1) == 0) {
 				OnDispose();
 			}
-		}
-
-		/// <summary>
-		/// Finalizer<br/>
-		/// 析构函数<br/>
-		/// </summary>
-		~SimpleDisposable() {
-			Dispose();
 		}
 	}
 }

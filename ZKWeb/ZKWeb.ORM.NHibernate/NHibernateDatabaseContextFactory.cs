@@ -12,6 +12,8 @@ using NHibernate;
 using ZKWeb.Logging;
 using ZKWeb.Storage;
 using ZKWeb.Server;
+using System.Collections.Generic;
+using System.Globalization;
 
 namespace ZKWeb.ORM.NHibernate {
 	/// <summary>
@@ -44,20 +46,30 @@ namespace ZKWeb.ORM.NHibernate {
 		/// Initialize<br/>
 		/// 初始化<br/>
 		/// </summary>
-		/// <param name="database">Database type</param>
-		/// <param name="connectionString">Connection string</param>
-		public NHibernateDatabaseContextFactory(string database, string connectionString) {
+		public NHibernateDatabaseContextFactory(string database, string connectionString) :
+			this(database, connectionString,
+				Application.Ioc.ResolveMany<IDatabaseInitializeHandler>(),
+				Application.Ioc.ResolveMany<IEntityMappingProvider>()) { }
+
+		/// <summary>
+		/// Initialize<br/>
+		/// 初始化<br/>
+		/// </summary>
+		public NHibernateDatabaseContextFactory(
+			string database, string connectionString,
+			IEnumerable<IDatabaseInitializeHandler> handlers,
+			IEnumerable<IEntityMappingProvider> providers) {
 			// create database configuration
 			var pathConfig = Application.Ioc.Resolve<LocalPathConfig>();
 			IPersistenceConfigurer db;
-			if (string.Compare(database, "PostgreSQL", true) == 0) {
+			if (string.Compare(database, "PostgreSQL", true, CultureInfo.InvariantCulture) == 0) {
 				db = BetterPostgreSQLConfiguration.Better.ConnectionString(connectionString);
-			} else if (string.Compare(database, "SQLite", true) == 0) {
+			} else if (string.Compare(database, "SQLite", true, CultureInfo.InvariantCulture) == 0) {
 				db = SQLiteConfiguration.Standard.ConnectionString(
 					connectionString.Replace("{{App_Data}}", pathConfig.AppDataDirectory));
-			} else if (string.Compare(database, "MySQL", true) == 0) {
+			} else if (string.Compare(database, "MySQL", true, CultureInfo.InvariantCulture) == 0) {
 				db = MySQLConfiguration.Standard.ConnectionString(connectionString);
-			} else if (string.Compare(database, "MSSQL", true) == 0) {
+			} else if (string.Compare(database, "MSSQL", true, CultureInfo.InvariantCulture) == 0) {
 				db = MsSqlConfiguration.MsSql2008.ConnectionString(connectionString);
 			} else {
 				throw new ArgumentException($"unsupported database type {database}");
@@ -65,19 +77,19 @@ namespace ZKWeb.ORM.NHibernate {
 			var configuration = Fluently.Configure();
 			configuration.Database(db);
 			// register entity mappings
-			var providers = Application.Ioc.ResolveMany<IEntityMappingProvider>();
-			var entityTypes = providers
-				.Select(p => ReflectionUtils.GetGenericArguments(
+			var entityProviders = providers
+				.GroupBy(p => ReflectionUtils.GetGenericArguments(
 					p.GetType(), typeof(IEntityMappingProvider<>))[0])
-				.Distinct().ToList();
+				.ToList();
 			configuration.Mappings(m => {
-				foreach (var entityType in entityTypes) {
-					var builder = typeof(NHibernateEntityMappingBuilder<>).MakeGenericType(entityType);
+				// FIXME: fluent nhibernate doesn't support passing arguments to builder
+				// so it still retrieve providers and handers from IoC container
+				foreach (var group in entityProviders) {
+					var builder = typeof(NHibernateEntityMappingBuilder<>).MakeGenericType(group.Key);
 					m.FluentMappings.Add(builder);
 				}
 			});
 			// set many-to-many table name
-			var handlers = Application.Ioc.ResolveMany<IDatabaseInitializeHandler>();
 			configuration.Mappings(m => {
 				m.FluentMappings.Conventions.Add(ConventionBuilder.HasManyToMany.Always(x => {
 					var tableName = string.Format("{0}To{1}", x.EntityType.Name, x.ChildType.Name);
@@ -116,7 +128,6 @@ namespace ZKWeb.ORM.NHibernate {
 			var hash = PasswordUtils.Sha1Sum(
 				Encoding.UTF8.GetBytes(database + connectionString)).ToHex();
 			var ddlFileEntry = fileStorage.GetStorageFile($"nh_{hash}.ddl");
-			Action onBuildFactorySuccess = null;
 			configuration.ExposeConfiguration(c => {
 				var scriptBuilder = new StringBuilder();
 				scriptBuilder.AppendLine("/* this file is for database migration checking, don't execute it */");
@@ -129,11 +140,11 @@ namespace ZKWeb.ORM.NHibernate {
 					foreach (var ex in schemaUpdate.Exceptions) {
 						logManager.LogError($"NHibernate schema update error: ({ex.GetType()}) {ex.Message}");
 					}
-					onBuildFactorySuccess = () => ddlFileEntry.WriteAllText(script);
+					// Write ddl script to file
+					// Since Nhibernate 5.0 ExposeConfiguration is executed on fly
+					ddlFileEntry.WriteAllText(script);
 				}
 			});
-			// write ddl script to file
-			onBuildFactorySuccess?.Invoke();
 		}
 
 		/// <summary>
@@ -142,9 +153,15 @@ namespace ZKWeb.ORM.NHibernate {
 		/// </summary>
 		/// <returns></returns>
 		public IDatabaseContext CreateContext() {
-			var session = SessionFactory.OpenSession();
-			try { session.SetBatchSize(BatchSize); } catch (NotSupportedException) { }
-			return new NHibernateDatabaseContext(session, Database);
+			var interceptor = new NHibernateLogInterceptor();
+			var session = SessionFactory
+				.WithOptions()
+				.Interceptor(interceptor)
+				.OpenSession();
+			try { session.SetBatchSize(BatchSize); } catch (NotSupportedException) { /* just not supported */ }
+			var context = new NHibernateDatabaseContext(session, Database, interceptor);
+			interceptor.Context = context;
+			return context;
 		}
 	}
 }

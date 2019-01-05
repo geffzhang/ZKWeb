@@ -12,11 +12,13 @@ using System.Threading;
 using ZKWeb.Database;
 
 namespace ZKWeb.ORM.NHibernate {
+#pragma warning disable S3881 // "IDisposable" should be implemented correctly
 	/// <summary>
 	/// NHibernate database context<br/>
 	/// Nhibernate的数据库上下文<br/>
 	/// </summary>
 	public class NHibernateDatabaseContext : IDatabaseContext {
+#pragma warning restore S3881 // "IDisposable" should be implemented correctly
 		/// <summary>
 		/// NHibernate session<br/>
 		/// NHibernate的会话<br/>
@@ -53,6 +55,19 @@ namespace ZKWeb.ORM.NHibernate {
 		/// 底层的数据库连接<br/>
 		/// </summary>
 		public object DbConnection { get { return Session.Connection; } }
+		/// <summary>
+		/// The interceptor used to log sql statements<br/>
+		/// 用于记录sql语句的拦截器<br/>
+		/// </summary>
+		public NHibernateLogInterceptor LogInterceptor { get; set; }
+		/// <summary>
+		/// Database command logger<br/>
+		/// 数据库命令记录器<br/>
+		/// </summary>
+		public IDatabaseCommandLogger CommandLogger {
+			get => LogInterceptor.CommandLogger;
+			set => LogInterceptor.CommandLogger = value;
+		}
 
 		/// <summary>
 		/// Initialize<br/>
@@ -60,15 +75,17 @@ namespace ZKWeb.ORM.NHibernate {
 		/// </summary>
 		/// <param name="session">NHibernate session</param>
 		/// <param name="database">Database type</param>
-		public NHibernateDatabaseContext(ISession session, string database) {
+		/// <param name="logInterceptor">Log interceptor</param>
+		public NHibernateDatabaseContext(ISession session, string database, NHibernateLogInterceptor logInterceptor) {
 			Session = session;
 			Transaction = null;
 			TransactionLevel = 0;
 			databaseType = database;
+			LogInterceptor = logInterceptor;
 		}
 
 		/// <summary>
-		/// Finalize<br/>
+		/// Finalizer<br/>
 		/// 析构函数<br/>
 		/// </summary>
 		~NHibernateDatabaseContext() {
@@ -90,7 +107,7 @@ namespace ZKWeb.ORM.NHibernate {
 		/// Begin a transaction<br/>
 		/// 开始一个事务<br/>
 		/// </summary>
-		public void BeginTransaction(IsolationLevel? isolationLevel) {
+		public void BeginTransaction(IsolationLevel? isolationLevel = null) {
 			var level = Interlocked.Increment(ref TransactionLevel);
 			if (level == 1) {
 				if (Transaction != null) {
@@ -159,8 +176,13 @@ namespace ZKWeb.ORM.NHibernate {
 			var entityLocal = entity; // can't use ref parameter in lambda
 			callbacks.ForEach(c => c.BeforeSave(this, entityLocal)); // notify before save
 			update?.Invoke(entityLocal);
-			entityLocal = Session.Merge(entityLocal);
-			Session.Flush(); // send commands to database
+			try {
+				entityLocal = Session.Merge(entityLocal);
+				Session.Flush(); // send commands to database
+			} catch {
+				Session.Evict(entityLocal); // remove entity from cache if any error
+				throw;
+			}
 			callbacks.ForEach(c => c.AfterSave(this, entityLocal)); // notify after save
 			entity = entityLocal;
 		}
@@ -186,14 +208,21 @@ namespace ZKWeb.ORM.NHibernate {
 			where T : class, IEntity {
 			var entitiesLocal = entities.ToList();
 			var callbacks = Application.Ioc.ResolveMany<IEntityOperationHandler<T>>().ToList();
-			for (int i = 0; i < entitiesLocal.Count; ++i) {
-				var entity = entitiesLocal[i];
-				callbacks.ForEach(c => c.BeforeSave(this, entity)); // notify before save
-				update?.Invoke(entity);
-				entity = Session.Merge(entity);
-				entitiesLocal[i] = entity;
+			try {
+				for (int i = 0; i < entitiesLocal.Count; ++i) {
+					var entity = entitiesLocal[i];
+					callbacks.ForEach(c => c.BeforeSave(this, entity)); // notify before save
+					update?.Invoke(entity);
+					entity = Session.Merge(entity);
+					entitiesLocal[i] = entity;
+				}
+				Session.Flush(); // send commands to database
+			} catch {
+				foreach (var entity in entitiesLocal) {
+					Session.Evict(entity); // remove entities from cache if any error
+				}
+				throw;
 			}
-			Session.Flush(); // send commands to database
 			foreach (var entity in entitiesLocal) {
 				callbacks.ForEach(c => c.AfterSave(this, entity)); // notify after save
 			}
@@ -215,7 +244,7 @@ namespace ZKWeb.ORM.NHibernate {
 		/// Batch delete entities<br/>
 		/// 批量删除实体<br/>
 		/// </summary>
-		public long BatchDelete<T>(Expression<Func<T, bool>> predicate, Action<T> beforeDelete)
+		public long BatchDelete<T>(Expression<Func<T, bool>> predicate, Action<T> beforeDelete = null)
 			where T : class, IEntity {
 			var entities = Query<T>().Where(predicate).ToList();
 			var callbacks = Application.Ioc.ResolveMany<IEntityOperationHandler<T>>().ToList();
@@ -272,7 +301,7 @@ namespace ZKWeb.ORM.NHibernate {
 			var sqlParameters = parameters as IDictionary<string, object>;
 			if (sqlParameters != null) {
 				foreach (var pair in sqlParameters) {
-					if (pair.Value is IEnumerable) {
+					if (pair.Value is IEnumerable && !(pair.Value is string)) {
 						sqlQuery = sqlQuery.SetParameterList(pair.Key, (IEnumerable)pair.Value);
 					} else {
 						sqlQuery = sqlQuery.SetParameter(pair.Key, pair.Value);

@@ -16,7 +16,12 @@ namespace ZKWeb {
 		public static IApplication Instance {
 			get {
 				if (instance == null) {
-					throw new NullReferenceException("Please set Application.Instance first");
+#pragma warning disable S2372 // Exceptions should not be thrown from property getters
+#pragma warning disable S3928 // Parameter names used into ArgumentException constructors should match an existing one 
+					throw new ArgumentNullException("Please set Application.Instance first");
+#pragma warning restore S3928 // Parameter names used into ArgumentException constructors should match an existing one 
+#pragma warning restore S2372 // Exceptions should not be thrown from property getters
+
 				}
 				return instance;
 			}
@@ -66,7 +71,8 @@ namespace ZKWeb {
 		/// Handle http request<br/>
 		/// Method "Response.End" will be called if processing completed without errors
 		/// 处理Http请求<br/>
-		/// 如果处理成功完成将会调用"Response.End"函数<br/>		/// </summary>
+		/// 如果处理成功完成将会调用"Response.End"函数<br/>
+		/// </summary>
 		public static void OnRequest(IHttpContext context) {
 			Instance.OnRequest(context);
 		}

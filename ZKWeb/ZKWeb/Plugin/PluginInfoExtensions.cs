@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using ZKWeb.Plugin.AssemblyLoaders;
 using ZKWeb.Plugin.CompilerServices;
 using ZKWeb.Server;
@@ -157,13 +158,17 @@ namespace ZKWeb.Plugin {
 			if (File.Exists(compileInfoPath)) {
 				existCompileInfo = File.ReadAllText(compileInfoPath);
 			}
-			var compileInfo = string.Join("\r\n", sourceFiles
+			var compileInfoBuilder = new StringBuilder();
+			compileInfoBuilder.AppendLine(Application.FullVersion);
+			sourceFiles
 				.Select(s => new {
 					path = s.Substring(sourceDirectory.Length + 1),
 					time = File.GetLastWriteTime(s)
 				}) // Relative path and modify time
 				.OrderBy(s => s.path) // Order by path
-				.Select(s => $"{s.path} {s.time}")); // Generate line
+				.Select(s => $"{s.path} {s.time}")
+				.ForEach(s => compileInfoBuilder.AppendLine(s));
+			var compileInfo = compileInfoBuilder.ToString();
 			if (sourceFiles.Length > 0 && compileInfo != existCompileInfo) {
 				// Rename old files
 				if (File.Exists(assemblyPath)) {
@@ -187,7 +192,13 @@ namespace ZKWeb.Plugin {
 				File.WriteAllText(compileInfoPath, compileInfo);
 				// Remove old files, maybe they are locking but that's not matter
 				Directory.EnumerateFiles(info.BinDirectory(), "*.old")
-					.ForEach(path => { try { File.Delete(path); } catch { } });
+					.ForEach(path => { try { File.Delete(path); } catch { /* ignore error */ } });
+				// Call gc collect to avoid OOM
+#pragma warning disable S1215 // "GC.Collect" should not be called
+				GC.Collect();
+#pragma warning restore S1215 // "GC.Collect" should not be called
+				GC.WaitForFullGCComplete(-1);
+				GC.WaitForPendingFinalizers();
 			}
 		}
 	}

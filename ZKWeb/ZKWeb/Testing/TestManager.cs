@@ -1,5 +1,4 @@
-﻿using NSubstitute;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -17,16 +16,24 @@ namespace ZKWeb.Testing {
 	/// </summary>
 	public class TestManager {
 		/// <summary>
+		/// Extra test assemblies<br/>
+		/// 额外的测试程序集列表<br/>
+		/// </summary>
+		public virtual IList<Assembly> ExtraTestAssemblies { get { return _extraTestAssemblies; } }
+		private IList<Assembly> _extraTestAssemblies = new List<Assembly>();
+
+		/// <summary>
 		/// Get assemblies for testing<br/>
 		/// 获取测试使用的所有程序集<br/>
 		/// </summary>
 		/// <returns></returns>
 		public virtual IList<Assembly> GetAssembliesForTest() {
 			var result = new List<Assembly>();
-			result.Add(typeof(TestManager).GetTypeInfo().Assembly); // ZKWeb
-			result.Add(typeof(TestRunner).GetTypeInfo().Assembly); // ZKWebStandard
+			result.Add(typeof(TestManager).Assembly); // ZKWeb
+			result.Add(typeof(TestRunner).Assembly); // ZKWebStandard
 			var pluginManager = Application.Ioc.Resolve<PluginManager>();
-			result.AddRange(pluginManager.PluginAssemblies); // 插件程序集列表}
+			result.AddRange(pluginManager.PluginAssemblies);
+			result.AddRange(ExtraTestAssemblies);
 			return result;
 		}
 
@@ -78,8 +85,8 @@ namespace ZKWeb.Testing {
 			var contextFactory = DatabaseManager.CreateContextFactor(orm, database, connectionString);
 			// Override database manager with above factory
 			var overrideIoc = Application.OverrideIoc();
-			var databaseManagerMock = Substitute.For<DatabaseManager>();
-			databaseManagerMock.CreateContext().Returns(callInfo => contextFactory.CreateContext());
+			var databaseManagerMock = new DatabaseManager();
+			databaseManagerMock.DefaultContextFactory = contextFactory;
 			Application.Ioc.Unregister<DatabaseManager>();
 			Application.Ioc.RegisterInstance(databaseManagerMock);
 			// Finish override when disposed

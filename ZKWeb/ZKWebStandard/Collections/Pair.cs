@@ -51,10 +51,10 @@ namespace ZKWebStandard.Collections {
 		/// Compare to the given object for equality<br/>
 		/// 检查是否与参数中对象相等<br/>
 		/// </summary>
-		/// <param name="obj">Other object</param>
+		/// <param name="other">Other object</param>
 		/// <returns></returns>
-		public bool Equals(Pair<TFirst, TSecond> obj) {
-			return First.EqualsSupportsNull(obj.First) && Second.EqualsSupportsNull(obj.Second);
+		public bool Equals(Pair<TFirst, TSecond> other) {
+			return First.EqualsSupportsNull(other.First) && Second.EqualsSupportsNull(other.Second);
 		}
 
 		/// <summary>
@@ -86,6 +86,17 @@ namespace ZKWebStandard.Collections {
 		/// <returns></returns>
 		public override string ToString() {
 			return $"({First?.ToString() ?? "null"}, {Second.ToString() ?? "null"})";
+		}
+
+		/// <summary>
+		/// Support deconstruction<br/>
+		/// 支持解构<br/>
+		/// </summary>
+		/// <param name="first">First value</param>
+		/// <param name="second">Second value</param>
+		public void Deconstruct(out TFirst first, out TSecond second) {
+			first = First;
+			second = Second;
 		}
 	}
 

@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using ZKWeb.Toolkits.WebsitePublisher.Gui.Properties;
 using ZKWeb.Toolkits.WebsitePublisher.Model;
 
 namespace ZKWeb.Toolkits.WebsitePublisher.Gui {
@@ -36,10 +37,11 @@ namespace ZKWeb.Toolkits.WebsitePublisher.Gui {
 				parameters.OutputName = tbOutputName.Text;
 				parameters.OutputDirectory = tbOutputDirectory.Text;
 				parameters.IgnorePattern = tbIgnorePattern.Text;
+				parameters.Configuration = cbConfiguration.Text;
 				parameters.Framework = cbFramework.Text;
 				var publisher = new WebsitePublisher(parameters);
 				await Task.Run(() => publisher.PublishWebsite());
-				MessageBox.Show("Success");
+				MessageBox.Show(Resources.PublishSuccessfully);
 			} catch (Exception ex) {
 				MessageBox.Show(ex.Message);
 			} finally {

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using ZKWeb.Cache;
 using ZKWeb.Cache.Policies;
@@ -17,6 +18,7 @@ using ZKWeb.Templating;
 using ZKWeb.Templating.DynamicContents;
 using ZKWeb.Testing;
 using ZKWeb.Web;
+using ZKWeb.Web.ActionCollections;
 using ZKWeb.Web.ActionParameterProviders;
 using ZKWeb.Web.HttpRequestHandlers;
 using ZKWebStandard.Collections;
@@ -25,21 +27,24 @@ using ZKWebStandard.Ioc;
 using ZKWebStandard.Web;
 
 namespace ZKWeb.Server {
+#pragma warning disable S3881 // "IDisposable" should be implemented correctly
 	/// <summary>
 	/// Default application implementation<br/>
 	/// 默认应用类<br/>
 	/// </summary>
-	public class DefaultApplication : IApplication {
+	public class DefaultApplication : IApplication, IDisposable {
+#pragma warning restore S3881 // "IDisposable" should be implemented correctly
 		/// <summary>
 		/// ZKWeb Version String<br/>
 		/// ZKWeb的版本字符串<br/>
 		/// </summary>
-		public virtual string FullVersion { get { return "1.9.1 beta 2"; } }
+		public virtual string FullVersion { get { return _fullVersion; } }
+		private readonly string _fullVersion = "";
 		/// <summary>
 		/// ZKWeb Version Object<br/>
 		/// ZKWeb的版本对象<br/>
 		/// </summary>
-		public virtual Version Version { get { return Version.Parse(FullVersion.Split(' ')[0]); } }
+		public virtual Version Version { get { return Version.Parse(FullVersion.Split('-')[0]); } }
 		/// <summary>
 		/// The IoC Container Instance<br/>
 		/// IoC容器的实例<br/>
@@ -64,17 +69,27 @@ namespace ZKWeb.Server {
 		/// In progress requests<br/>
 		/// 处理中的请求数量<br/>
 		/// </summary>
-		protected int inProgressRequests = 0;
+		protected int inProgressRequests;
 		/// <summary>
 		/// Initialize Flag<br/>
 		/// 初始化标记<br/>
 		/// </summary>
-		protected int initialized = 0;
+		protected int initialized;
 		/// <summary>
 		/// Website root directory<br/>
 		/// 网站根目录的路径<br/>
 		/// </summary>
 		protected string WebsiteRootDirectory { get; set; }
+
+		/// <summary>
+		/// Initialize<br/>
+		/// 初始化<br/>
+		/// </summary>
+		public DefaultApplication() {
+			_fullVersion = typeof(DefaultApplication).Assembly
+				.GetCustomAttributes(true)
+				.OfType<AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion;
+		}
 
 		/// <summary>
 		/// Register components to the default container<br/>
@@ -87,11 +102,7 @@ namespace ZKWeb.Server {
 			Ioc.RegisterMany<TJsonConverter>(ReuseType.Singleton);
 			Ioc.RegisterMany<TranslateManager>(ReuseType.Singleton);
 			Ioc.RegisterMany<LogManager>(ReuseType.Singleton);
-#if NETCORE
-			Ioc.RegisterMany<CoreAssemblyLoader>(ReuseType.Singleton);
-#else
 			Ioc.RegisterMany<NetAssemblyLoader>(ReuseType.Singleton);
-#endif
 			Ioc.RegisterMany<RoslynCompilerService>(ReuseType.Singleton);
 			Ioc.RegisterMany<PluginManager>(ReuseType.Singleton);
 			Ioc.RegisterMany<PluginReloader>(ReuseType.Singleton);
@@ -110,6 +121,7 @@ namespace ZKWeb.Server {
 			Ioc.RegisterMany<TemplateFileSystem>(ReuseType.Singleton);
 			Ioc.RegisterMany<TemplateManager>(ReuseType.Singleton);
 			Ioc.RegisterMany<TestManager>(ReuseType.Singleton);
+			Ioc.RegisterMany<DefaultActionCollection>(ReuseType.Transient);
 			Ioc.RegisterMany<DefaultActionParameterProvider>(ReuseType.Singleton);
 			Ioc.RegisterMany<AddVersionHeaderHandler>(ReuseType.Singleton);
 			Ioc.RegisterMany<DefaultErrorHandler>(ReuseType.Singleton);
@@ -150,7 +162,10 @@ namespace ZKWeb.Server {
 		/// 开启核心服务<br/>
 		/// </summary>
 		protected virtual void StartServices() {
-			Ioc.Resolve<PluginReloader>().Start();
+			var config = Ioc.Resolve<WebsiteConfigManager>().WebsiteConfig;
+			if (!config.Extra.GetOrDefault(ExtraConfigKeys.DisableAutomaticPluginReloading, false)) {
+				Ioc.Resolve<PluginReloader>().Start();
+			}
 			Ioc.Resolve<AutomaticCacheCleaner>().Start();
 		}
 
@@ -169,6 +184,7 @@ namespace ZKWeb.Server {
 				var logPath = Path.Combine(rootDirectory, "emergencyError.log");
 				File.AppendAllText(logPath, message + "\r\n");
 			} catch {
+				// ignore any error because it's emergency
 			}
 		}
 
@@ -189,13 +205,13 @@ namespace ZKWeb.Server {
 			} catch (Exception ex) {
 				var message = ex.ToDetailedString();
 				LogEmergencyError(message);
-				throw new Exception(message, ex);
+				throw new InvalidOperationException(message, ex);
 			}
 		}
 
 		/// <summary>
-		/// Handle http request<br/>
-		/// 处理Http请求<br/>
+		/// Handle http error<br/>
+		/// 处理Http错误<br/>
 		/// </summary>
 		public virtual void OnError(IHttpContext context, Exception ex) {
 			// Detect nested call
@@ -212,8 +228,8 @@ namespace ZKWeb.Server {
 		}
 
 		/// <summary>
-		/// Handle http error<br/>
-		/// 处理Http错误<br/>
+		/// Handle http request<br/>
+		/// 处理Http请求<br/>
 		/// </summary>
 		public virtual void OnRequest(IHttpContext context) {
 			// Detect nested call
@@ -228,12 +244,18 @@ namespace ZKWeb.Server {
 					// Call pre request handlers, in register order
 					foreach (var handler in Ioc.ResolveMany<IHttpRequestPreHandler>()) {
 						handler.OnRequest();
+						if (context.Response.IsEnded) {
+							return;
+						}
 					}
 					// Wrap handler action by wrappers
 					var handlerAction = new Action(() => {
 						// Call request handlers, in reverse register order
 						foreach (var handler in Ioc.ResolveMany<IHttpRequestHandler>().Reverse()) {
 							handler.OnRequest();
+							if (context.Response.IsEnded) {
+								return;
+							}
 						}
 						// If request not get handled, throw an 404 exception
 						throw new HttpException(404, "Not Found");
@@ -251,6 +273,8 @@ namespace ZKWeb.Server {
 					} finally {
 						// Decrease requests count
 						Interlocked.Decrement(ref inProgressRequests);
+						// Notify scope finished
+						Ioc.ScopeFinished();
 					}
 				}
 			}
@@ -268,6 +292,15 @@ namespace ZKWeb.Server {
 				overrideIoc.Value = previousOverride;
 				tmp?.Dispose();
 			});
+		}
+
+		/// <summary>
+		/// Dispose the resources used by the container<br/>
+		/// 释放容器使用的资源<br/>
+		/// </summary>
+		public void Dispose() {
+			defaultIoc.Dispose();
+			overrideIoc.Dispose();
 		}
 	}
 }

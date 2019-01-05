@@ -8,13 +8,17 @@ using System.Collections.Generic;
 using MongoDB.Driver;
 using ZKWebStandard.Utils;
 using MongoDB.Bson;
+using ZKWebStandard.Ioc;
+using MongoDB.Driver.Core.Events;
 
 namespace ZKWeb.ORM.MongoDB {
+#pragma warning disable S3881 // "IDisposable" should be implemented correctly
 	/// <summary>
 	/// MongoDB database context<br/>
 	/// MongoDB的数据库上下文<br/>
 	/// </summary>
 	public class MongoDBDatabaseContext : IDatabaseContext {
+#pragma warning restore S3881 // "IDisposable" should be implemented correctly
 		/// <summary>
 		/// MongoDB entity mappings<br/>
 		/// MongoDB的实体映射集合<br/>
@@ -45,6 +49,11 @@ namespace ZKWeb.ORM.MongoDB {
 		/// 底层的数据库连接<br/>
 		/// </summary>
 		public object DbConnection { get { return MongoDatabase; } }
+		/// <summary>
+		/// Database command logger<br/>
+		/// 数据库命令记录器<br/>
+		/// </summary>
+		public IDatabaseCommandLogger CommandLogger { get; set; }
 
 		/// <summary>
 		/// Initialize<br/>
@@ -56,26 +65,33 @@ namespace ZKWeb.ORM.MongoDB {
 			MongoUrl connectionUrl,
 			MongoDBEntityMappings mappings) {
 			Mappings = mappings;
-			MongoDatabase = new MongoClient(connectionUrl).GetDatabase(connectionUrl.DatabaseName);
+			var mongoClientSettings = MongoClientSettings.FromUrl(connectionUrl);
+			mongoClientSettings.ClusterConfigurator = cb => {
+				cb.Subscribe<CommandStartedEvent>(e => {
+					CommandLogger?.LogCommand(this, $"{e.CommandName}: {e.Command.ToJson()}", e.Command);
+				});
+			};
+			MongoDatabase = new MongoClient(mongoClientSettings).GetDatabase(connectionUrl.DatabaseName);
+			CommandLogger = Application.Ioc.Resolve<IDatabaseCommandLogger>(IfUnresolved.ReturnDefault);
 		}
 
 		/// <summary>
 		/// Do nothing<br/>
 		/// 不做任何事情<br/>
 		/// </summary>
-		public void Dispose() { }
+		public void Dispose() { /* do nothing */ }
 
 		/// <summary>
 		/// Do Nothing<br/>
 		/// 不做任何事情<br/>
 		/// </summary>
-		public void BeginTransaction(IsolationLevel? isolationLevel = null) { }
+		public void BeginTransaction(IsolationLevel? isolationLevel = null) { /* do nothing */ }
 
 		/// <summary>
 		/// Do Nothing<br/>
 		/// 不做任何事情<br/>
 		/// </summary>
-		public void FinishTransaction() { }
+		public void FinishTransaction() { /* do nothing */ }
 
 		/// <summary>
 		/// Get mongo collection<br/>
@@ -193,7 +209,7 @@ namespace ZKWeb.ORM.MongoDB {
 		/// Batch delete entities<br/>
 		/// 批量删除实体<br/>
 		/// </summary>
-		public long BatchDelete<T>(Expression<Func<T, bool>> predicate, Action<T> beforeDelete)
+		public long BatchDelete<T>(Expression<Func<T, bool>> predicate, Action<T> beforeDelete = null)
 			where T : class, IEntity {
 			var entities = Query<T>().Where(predicate).ToList();
 			var callbacks = Application.Ioc.ResolveMany<IEntityOperationHandler<T>>().ToList();
@@ -234,16 +250,16 @@ namespace ZKWeb.ORM.MongoDB {
 		/// 执行一个原生的更新操作<br/>
 		/// </summary>
 		public long RawUpdate(object query, object parameters) {
-			if (query is Command<int>) {
+			if (query is Command<int> intCommand) {
 				return MongoDatabase.RunCommand(
-					(Command<int>)query, parameters as ReadPreference);
-			} else if (query is Command<long>) {
+					intCommand, parameters as ReadPreference);
+			} else if (query is Command<long> longCommand) {
 				return MongoDatabase.RunCommand(
-					(Command<long>)query, parameters as ReadPreference);
-			} else if (query is Func<IMongoDatabase, int>) {
-				return ((Func<IMongoDatabase, int>)query).Invoke(MongoDatabase);
-			} else if (query is Func<IMongoDatabase, long>) {
-				return ((Func<IMongoDatabase, long>)query).Invoke(MongoDatabase);
+					longCommand, parameters as ReadPreference);
+			} else if (query is Func<IMongoDatabase, int> intFunc) {
+				return intFunc.Invoke(MongoDatabase);
+			} else if (query is Func<IMongoDatabase, long> longFunc) {
+				return longFunc.Invoke(MongoDatabase);
 			}
 			throw new ArgumentException(
 				"Unsupported query type, you can use Command<int> or Func<IMongoDatabase, int>");
@@ -255,16 +271,14 @@ namespace ZKWeb.ORM.MongoDB {
 		/// </summary>
 		public IEnumerable<T> RawQuery<T>(object query, object parameters)
 			where T : class {
-			if (query is FilterDefinition<T>) {
+			if (query is FilterDefinition<T> filter) {
 				return GetCollection<T>().Find(
-					(FilterDefinition<T>)query,
-					parameters as FindOptions).ToEnumerable();
-			} else if (query is Command<T>) {
+					filter, parameters as FindOptions).ToEnumerable();
+			} else if (query is Command<T> command) {
 				return new[] { MongoDatabase.RunCommand(
-					(Command<T>)query, parameters as ReadPreference)
+					command, parameters as ReadPreference)
 				};
-			} else if (query is BsonJavaScript[]) {
-				var scripts = (BsonJavaScript[])query;
+			} else if (query is BsonJavaScript[] scripts) {
 				return GetCollection<T>().MapReduce(
 					scripts[0], scripts[1],
 					parameters as MapReduceOptions<T, T>).ToEnumerable();

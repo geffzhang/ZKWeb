@@ -1,11 +1,11 @@
 ﻿using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.FastReflection;
 using System.Linq;
 using System.Reflection;
-using ZKWebStandard.Collections;
+using ZKWeb.Server;
 using ZKWebStandard.Extensions;
+using ZKWebStandard.Ioc;
+using ZKWebStandard.Ioc.Extensions;
 using ZKWebStandard.Web;
 
 namespace ZKWeb.Web {
@@ -23,16 +23,34 @@ namespace ZKWeb.Web {
 	/// </example>
 	public class ControllerManager : IHttpRequestHandler {
 		/// <summary>
-		/// { (Path, Method): Action }
+		/// The suffix of controller type name<br/>
+		/// 控制器类型名称的后缀<br/>
 		/// </summary>
-		protected IDictionary<Pair<string, string>, Func<IActionResult>> Actions { get; set; }
+		public static readonly string ControllerSuffix = "Controller";
+		/// <summary>
+		/// The index method name<br/>
+		/// 首页函数名称<br/>
+		/// </summary>
+		public static readonly string IndexMethodName = "Index";
+		/// <summary>
+		/// Action Collection<br/>
+		/// Action函数的集合<br/>
+		/// </summary>
+		public IActionCollection Actions { get; private set; }
+		/// <summary>
+		/// Disable case sensitive routing<br/>
+		/// 禁止大小写敏感的路由<br/>
+		/// </summary>
+		public bool DisableCaseSensitiveRouting { get; private set; }
 
 		/// <summary>
 		/// Initialize<br/>
 		/// 初始化<br/>
 		/// </summary>
 		public ControllerManager() {
-			Actions = new ConcurrentDictionary<Pair<string, string>, Func<IActionResult>>();
+			Actions = Application.Ioc.Resolve<IActionCollection>();
+			DisableCaseSensitiveRouting = Application.Ioc.Resolve<WebsiteConfigManager>()
+				.WebsiteConfig.Extra.GetOrDefault<bool>(ExtraConfigKeys.DisableCaseSensitiveRouting);
 		}
 
 		/// <summary>
@@ -46,54 +64,63 @@ namespace ZKWeb.Web {
 			var action = GetAction(context.Request.Path, context.Request.Method);
 			if (action != null) {
 				var result = action();
-				// Write response
-				result.WriteResponse(context.Response);
-				// If result is disposable, dispose it
-				if (result is IDisposable) {
-					((IDisposable)result).Dispose();
+				if (!context.Response.IsEnded) {
+					// Write response
+					result.WriteResponse(context.Response);
 				}
-				// End response
-				context.Response.End();
+				if (result is IDisposable disposable) {
+					// If result is disposable, dispose it
+					disposable.Dispose();
+				}
+				if (!context.Response.IsEnded) {
+					// End response
+					context.Response.End();
+				}
 			}
 		}
 
 		/// <summary>
-		/// Register controller type<br/>
-		/// 注册控制器类型<br/>
+		/// Register controller factory data<br/>
+		/// 注册控制器工厂函数<br/>
+		/// Rules:<br/>
+		/// Class without [ActionBase], method with [Action("abc")] => /abc (for backward compatibility)<br/>
+		/// Class without [ActionBase], method without [Action] => /$controller/$action<br/>
+		/// Class without [ActionBase], method Index without [Action] => /$controller, /$controller/Index<br/>
+		/// Class with [ActionBase("abc")], method with [Action("index")] => /abc/index<br/>
+		/// Class with [ActionBase("abc")], method without [Action] => /abc/$action<br/>
+		/// Class with [ActionBase("abc")], method Index without [Action] => /abc, /abc/Index<br/>
 		/// </summary>
-		[Obsolete("Use RegisterController(controller)")]
-		public virtual void RegisterController<T>() {
-			RegisterController(typeof(T));
-		}
-
-		/// <summary>
-		/// Register controller type<br/>
-		/// 注册控制器类型<br/>
-		/// </summary>
-		[Obsolete("Use RegisterController(controller)")]
-		public virtual void RegisterController(Type type) {
-			RegisterController((IController)Activator.CreateInstance(type));
-		}
-
-		/// <summary>
-		/// Register controller instance<br/>
-		/// Attention: this instance will be used across all requests<br/>
-		/// 注册控制器实例<br/>
-		/// 注意: 这个实例会在所有请求中使用<br/>
-		/// </summary>
-		/// <param name="controller">Controller instance</param>
-		public virtual void RegisterController(IController controller) {
-			// Get all public methods with ActionAttribute
-			var type = controller.GetType();
+		public virtual void RegisterController(ContainerFactoryData factoryData) {
+			var type = factoryData.ImplementationTypeHint;
+			Func<IController> factory = () => (IController)factoryData.GetInstance(Application.Ioc, type);
+			// Calculate path base from attribute or controller name - suffix
+			var actionBaseAttribute = type.GetCustomAttribute<ActionBaseAttribute>();
+			string pathBase;
+			if (actionBaseAttribute?.PathBase != null) {
+				pathBase = actionBaseAttribute.PathBase.TrimEnd('/');
+			} else {
+				pathBase = type.Name.EndsWith(ControllerSuffix) ?
+					type.Name.Substring(0, type.Name.Length - ControllerSuffix.Length) :
+					type.Name;
+			}
 			foreach (var method in type.FastGetMethods(
-				BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public)) {
+				BindingFlags.Instance | BindingFlags.Static |
+				BindingFlags.Public | BindingFlags.DeclaredOnly)) {
+				// Ignore special and void methods
+				if (method.IsSpecialName || method.ReturnType == typeof(void)) {
+					continue;
+				}
 				// Get action attributes
 				var actionAttributes = method.GetCustomAttributes<ActionAttribute>();
 				if (!actionAttributes.Any()) {
-					continue;
+					if (method.Name == IndexMethodName) {
+						actionAttributes = new[] { new ActionAttribute(), new ActionAttribute("") };
+					} else {
+						actionAttributes = new[] { new ActionAttribute() };
+					}
 				}
 				// Build action
-				var action = controller.BuildActionDelegate(method);
+				var action = factory.BuildActionDelegate(method);
 				// Apply action filters
 				var filterAttributes = method.GetCustomAttributes<ActionFilterAttribute>();
 				foreach (var filterAttribute in filterAttributes) {
@@ -101,9 +128,56 @@ namespace ZKWeb.Web {
 				}
 				// Register action
 				foreach (var attribute in actionAttributes) {
-					RegisterAction(attribute.Path, attribute.Method, action, attribute.OverrideExists);
+					string path;
+					if (actionBaseAttribute == null) {
+						if (attribute.Path != null) {
+							path = attribute.Path;
+						} else {
+							path = pathBase + "/" + method.Name;
+						}
+					} else {
+						if (attribute.Path != null) {
+							path = pathBase + "/" + attribute.Path.TrimStart('/');
+						} else {
+							path = pathBase + "/" + method.Name;
+						}
+					}
+					var httpMethod = attribute.Method ?? HttpMethods.GET;
+					RegisterAction(path, httpMethod, action, attribute.OverrideExists);
 				}
 			}
+		}
+
+		/// <summary>
+		/// Register controller type, reuse type will be Transient<br/>
+		/// 注册控制器类型, 重用类型是Transient<br/>
+		/// </summary>
+		public virtual void RegisterController(Type type) {
+			var factoryData = new ContainerFactoryData(
+				ContainerFactoryBuilder.BuildFactory(type),
+				ReuseType.Transient,
+				type);
+			RegisterController(factoryData);
+		}
+
+		/// <summary>
+		/// Register controller type, reuse type will be Transient<br/>
+		/// 注册控制器类型, 重用类型是Transient<br/>
+		/// </summary>
+		public virtual void RegisterController<T>() {
+			RegisterController(typeof(T));
+		}
+
+		/// <summary>
+		/// Register controller instance, reuse type will be Singleton<br/>
+		/// 注册控制器实例, 重用类型是Singleton<br/>
+		/// </summary>
+		public virtual void RegisterController(IController controller) {
+			var factoryData = new ContainerFactoryData(
+				(c, s) => controller,
+				ReuseType.Singleton,
+				controller.GetType());
+			RegisterController(factoryData);
 		}
 
 		/// <summary>
@@ -121,6 +195,9 @@ namespace ZKWeb.Web {
 			}
 			if (!path.StartsWith("/")) {
 				path = "/" + path;
+			}
+			if (DisableCaseSensitiveRouting) {
+				path = path.ToLowerInvariant();
 			}
 			return path;
 		}
@@ -143,7 +220,7 @@ namespace ZKWeb.Web {
 		/// <param name="path">Path</param>
 		/// <param name="method">Method</param>
 		/// <param name="action">Action</param>
-		/// <param name="overrideExists">Allow override exist actions</param>
+		/// <param name="overrideExists">Allow override exists action</param>
 		public virtual void RegisterAction(
 			string path, string method, Func<IActionResult> action, bool overrideExists) {
 			// Apply global registered action filter
@@ -153,11 +230,7 @@ namespace ZKWeb.Web {
 			}
 			// Associate path and method with action
 			path = NormalizePath(path);
-			var key = Pair.Create(path, method);
-			if (!overrideExists && Actions.ContainsKey(key)) {
-				throw new ArgumentException($"action for {path} already registered, try option `overrideExists`");
-			}
-			Actions[key] = action;
+			Actions.Set(path, method, action, overrideExists);
 		}
 
 		/// <summary>
@@ -169,8 +242,7 @@ namespace ZKWeb.Web {
 		/// <returns></returns>
 		public virtual bool UnregisterAction(string path, string method) {
 			path = NormalizePath(path);
-			var key = Pair.Create(path, method);
-			return Actions.Remove(key);
+			return Actions.Remove(path, method);
 		}
 
 		/// <summary>
@@ -184,8 +256,7 @@ namespace ZKWeb.Web {
 		/// <returns></returns>
 		public virtual Func<IActionResult> GetAction(string path, string method) {
 			path = NormalizePath(path);
-			var key = Pair.Create(path, method);
-			return Actions.GetOrDefault(key);
+			return Actions.Get(path, method);
 		}
 
 		/// <summary>
@@ -197,8 +268,8 @@ namespace ZKWeb.Web {
 		/// 注意: 所有已注册的控制器都会在这里被创建<br/>
 		/// </summary>
 		internal protected virtual void Initialize() {
-			foreach (var controller in Application.Ioc.ResolveMany<IController>()) {
-				RegisterController(controller);
+			foreach (var factories in Application.Ioc.ResolveFactories(typeof(IController))) {
+				RegisterController(factories);
 			}
 		}
 	}

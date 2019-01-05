@@ -61,7 +61,7 @@ namespace ZKWeb.ORM.NHibernate {
 		/// </summary>
 		public void Id<TPrimaryKey>(
 			Expression<Func<T, TPrimaryKey>> memberExpression,
-			EntityMappingOptions options) {
+			EntityMappingOptions options = null) {
 			// Unsupported options: Unique, Nullable, Index, CascadeDelete
 			options = options ?? new EntityMappingOptions();
 			var idPart = base.Id(Expression.Lambda<Func<T, object>>(
@@ -77,7 +77,7 @@ namespace ZKWeb.ORM.NHibernate {
 				idPart = idPart.CustomSqlType(options.CustomSqlType);
 			}
 			if (options.WithSerialization == true) {
-				idPart = idPart.CustomType(
+				idPart.CustomType(
 					typeof(NHibernateJsonSerializedType<>).MakeGenericType(typeof(TPrimaryKey)));
 			}
 		}
@@ -120,7 +120,7 @@ namespace ZKWeb.ORM.NHibernate {
 				memberPart = memberPart.CustomType<int>(); // store enum as int type by default
 			}
 			if (options.WithSerialization == true) {
-				memberPart = memberPart.CustomType(
+				memberPart.CustomType(
 					typeof(NHibernateJsonSerializedType<>).MakeGenericType(typeof(TMember)));
 			}
 		}

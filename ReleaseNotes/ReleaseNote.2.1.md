@@ -1,0 +1,57 @@
+﻿### 2.1 Release Note
+
+### Changes
+
+- Update packages
+	- NHibernate 5.1.0
+	- Npgsql 3.2.7
+	- MySqlConnector 0.37.0
+	- Dapper 1.50.4
+	- Dommel 1.10.1
+	- ZKWeb.System.Drawing 4.0.1
+	- ZKWeb.Fork.FluentNHibernate 2.1.1
+	- MongoDB.Driver 2.5.0
+	- Microsoft.EntityFrameworkCore 2.0.2
+	- Microsoft.EntityFrameworkCore.Design 2.0.2
+	- Microsoft.EntityFrameworkCore.InMemory 2.0.2
+	- Microsoft.EntityFrameworkCore.Sqlite 2.0.2
+	- Microsoft.EntityFrameworkCore.SqlServer 2.0.2
+	- Npgsql.EntityFrameworkCore.PostgreSQL 2.0.1
+	- Pomelo.EntityFrameworkCore.MySql 2.0.1
+	- System.Security.Cryptography.Algorithms 4.3.1
+	- Microsoft.CodeAnalysis.CSharp 2.7.0
+	- Microsoft.DiaSymReader.Native 1.7.0
+	- Microsoft.DiaSymReader.PortablePdb 1.4.0
+	- Microsoft.CSharp 4.4.1
+	- Microsoft.Extensions.DependencyModel 2.0.4
+	- Microsoft.CodeAnalysis.CSharp 2.6.1
+	- Microsoft.AspNetCore.Hosting.Abstractions 2.0.2
+	- Microsoft.AspNetCore.Http.Abstractions 2.0.2
+	- MySql.Data 6.10.6
+	- Microsoft.Data.Sqlite 2.0.1
+	- Microsoft.Owin 4.0.0
+	- Newtonsoft.Json 11.0.1
+- Bug fixes
+	- Fix state didn't reset during EFCore dbcontext reusing
+- Improve plugin system
+	- Support disable automatic plugin relodaing
+	- Provide a method to decide which plugin to load
+- Improve ORM
+	- Change dapper's mysql provider to MySqlConnector (previous is Pomelo.Data.MySql)
+	- ZKWeb.ORM.NHibernate now supports .net standard 2.0 (except with sqlite)
+	- Support command logger (see IDatabaseContext.CommandLogger)
+		- Dapper: Log insert, update, delete and select
+		- EFCore: Log insert, update, delete and select
+		- InMemory: No logging
+		- MongoDB: Log commands in json format
+		- NHibernate: Log insert, update, delete and select
+- Improve routing system
+	- Support register action by method and class name
+	- Rules:
+		- Class without `[ActionBase]`, method with `[Action("abc")]` => `/abc` (for backward compatibility)<br/>
+		- Class without `[ActionBase]`, method without `[Action]` => `/$controller/$action`<br/>
+		- Class without `[ActionBase]`, method Index without `[Action]` => `/$controller`, `/$controller/Index`<br/>
+		- Class with `[ActionBase("abc")]`, method with `[Action("index")]` => `/abc/index`<br/>
+		- Class with `[ActionBase("abc")]`, method without `[Action]` => `/abc/$action`<br/>
+		- Class with `[ActionBase("abc")]`, method Index without `[Action]` => `/abc`, `/abc/Index`<br/>
+- Add electron based project creator (thanks to @hunjixin)

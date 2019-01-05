@@ -1,15 +1,12 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using System;
 using System.Collections.Generic;
 using System.FastReflection;
 using System.Linq;
 using System.Linq.Expressions;
-using System.Reflection;
 using ZKWeb.Database;
 using ZKWeb.Logging;
-using ZKWebStandard.Extensions;
 
 namespace ZKWeb.ORM.EFCore {
 	/// <summary>
@@ -40,18 +37,17 @@ namespace ZKWeb.ORM.EFCore {
 		/// Initialize<br/>
 		/// 初始化<br/>
 		/// </summary>
-		/// <param name="builder">Model builder</param>
 		public EFCoreEntityMappingBuilder(
-			ModelBuilder builder) {
+			ModelBuilder builder,
+			IEnumerable<IDatabaseInitializeHandler> handlers,
+			IEnumerable<IEntityMappingProvider> providers) {
 			Builder = builder.Entity<T>();
 			// Configure with registered providers
-			var providers = Application.Ioc.ResolveMany<IEntityMappingProvider<T>>();
-			foreach (var provider in providers) {
+			foreach (var provider in providers.OfType<IEntityMappingProvider<T>>()) {
 				provider.Configure(this);
 			}
 			// Set table name with registered handlers
 			var tableName = CustomTableName ?? typeof(T).Name;
-			var handlers = Application.Ioc.ResolveMany<IDatabaseInitializeHandler>();
 			foreach (var handler in handlers) {
 				handler.ConvertTableName(ref tableName);
 			}
@@ -73,7 +69,7 @@ namespace ZKWeb.ORM.EFCore {
 		/// </summary>
 		public void Id<TPrimaryKey>(
 			Expression<Func<T, TPrimaryKey>> memberExpression,
-			EntityMappingOptions options) {
+			EntityMappingOptions options = null) {
 			// Unsupported options: Length, Unique, Nullable,
 			// Index, CustomSqlType, CascadeDelete, WithSerialization
 			options = options ?? new EntityMappingOptions();
@@ -81,7 +77,7 @@ namespace ZKWeb.ORM.EFCore {
 				Expression.Convert(memberExpression.Body, typeof(object)),
 				memberExpression.Parameters));
 			if (!string.IsNullOrEmpty(options.Column)) {
-				keyBuilder = keyBuilder.HasName(options.Column);
+				keyBuilder.HasName(options.Column);
 			}
 		}
 
@@ -91,7 +87,7 @@ namespace ZKWeb.ORM.EFCore {
 		/// </summary>
 		public void Map<TMember>(
 			Expression<Func<T, TMember>> memberExpression,
-			EntityMappingOptions options) {
+			EntityMappingOptions options = null) {
 			// Unsupported options: CascadeDelete
 			options = options ?? new EntityMappingOptions();
 			var propertyBuilder = Builder.Property(memberExpression);
@@ -119,7 +115,7 @@ namespace ZKWeb.ORM.EFCore {
 					memberExpression.Parameters)).HasName(options.Index);
 			}
 			if (!string.IsNullOrEmpty(options.CustomSqlType)) {
-				propertyBuilder = propertyBuilder.HasColumnType(options.CustomSqlType);
+				propertyBuilder.HasColumnType(options.CustomSqlType);
 			}
 			if (options.WithSerialization == true) {
 				// log error only, some functions may not work
@@ -142,9 +138,9 @@ namespace ZKWeb.ORM.EFCore {
 			if (!string.IsNullOrEmpty(options.Navigation)) {
 				return options.Navigation;
 			}
-			var navigationTypeInfo = typeof(TNavigationType).GetTypeInfo();
+			var navigationType = typeof(TNavigationType);
 			var navigationProperty = typeof(TOther).FastGetProperties()
-				.FirstOrDefault(p => navigationTypeInfo.IsAssignableFrom(p.PropertyType));
+				.FirstOrDefault(p => navigationType.IsAssignableFrom(p.PropertyType));
 			return navigationProperty?.Name;
 		}
 
@@ -154,7 +150,7 @@ namespace ZKWeb.ORM.EFCore {
 		/// </summary>
 		public void References<TOther>(
 			Expression<Func<T, TOther>> memberExpression,
-			EntityMappingOptions options)
+			EntityMappingOptions options = null)
 			where TOther : class {
 			// Unsupported options: Length, Unique, Index,
 			// CustomSqlType, WithSerialization
@@ -184,7 +180,7 @@ namespace ZKWeb.ORM.EFCore {
 		/// </summary>
 		public void HasMany<TChild>(
 			Expression<Func<T, IEnumerable<TChild>>> memberExpression,
-			EntityMappingOptions options)
+			EntityMappingOptions options = null)
 			where TChild : class {
 			// Unsupported options: Column, Length, Unique,
 			// Nullable, Index, CustomSqlType, WithSerialization
@@ -193,9 +189,9 @@ namespace ZKWeb.ORM.EFCore {
 				.HasMany(memberExpression)
 				.WithOne(GetNavigationPropertyName<TChild, T>(options));
 			if (options.CascadeDelete == false) {
-				collectionBuilder = collectionBuilder.OnDelete(DeleteBehavior.Restrict);
+				collectionBuilder.OnDelete(DeleteBehavior.Restrict);
 			} else {
-				collectionBuilder = collectionBuilder.OnDelete(DeleteBehavior.Cascade); // true or default
+				collectionBuilder.OnDelete(DeleteBehavior.Cascade); // true or default
 			}
 		}
 
@@ -205,7 +201,7 @@ namespace ZKWeb.ORM.EFCore {
 		/// </summary>
 		public void HasManyToMany<TChild>(
 			Expression<Func<T, IEnumerable<TChild>>> memberExpression,
-			EntityMappingOptions options)
+			EntityMappingOptions options = null)
 			where TChild : class {
 			// log error only, some functions may not work
 			var logManager = Application.Ioc.Resolve<LogManager>();

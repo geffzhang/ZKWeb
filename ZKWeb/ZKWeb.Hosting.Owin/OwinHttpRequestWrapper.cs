@@ -88,6 +88,7 @@ namespace ZKWeb.Hosting.Owin {
 		public int RemotePort {
 			get { return OwinRequest.RemotePort ?? 0; }
 		}
+		public IDictionary<string, object> CustomParameters { get; }
 
 		public string GetCookie(string key) {
 			return OwinRequest.Cookies[key];
@@ -120,7 +121,9 @@ namespace ZKWeb.Hosting.Owin {
 					return contents.Select(c => ReadHttpContentAsString(c)).ToList();
 				}
 			}
+#pragma warning disable S1168 // Empty arrays and collections should be returned instead of null
 			return null;
+#pragma warning restore S1168 // Empty arrays and collections should be returned instead of null
 		}
 		public IEnumerable<Pair<string, IList<string>>> GetFormValues() {
 			if (OwinFormCollection.Value != null) {
@@ -210,6 +213,7 @@ namespace ZKWeb.Hosting.Owin {
 				return null;
 			});
 			HttpContentReadResults = new Dictionary<HttpContent, string>();
+			CustomParameters = new Dictionary<string, object>();
 		}
 	}
 }

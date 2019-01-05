@@ -76,5 +76,15 @@
 		/// 它会导致有时候不能对插件进行调试<br/>
 		/// </summary>
 		public const string CompilePluginsWithReleaseConfiguration = "ZKWeb.CompilePluginsWithReleaseConfiguration";
+		/// <summary>
+		/// Disable case sensitive routing<br/>
+		/// 禁止大小写敏感的路由<br/>
+		/// </summary>
+		public const string DisableCaseSensitiveRouting = "ZKWeb.DisableCaseSensitiveRouting";
+		/// <summary>
+		/// Disable automatic plugin reloading<br/>
+		/// 禁止自动重新加载插件<br/>
+		/// </summary>
+		public const string DisableAutomaticPluginReloading = "ZKWeb.DisableAutomaticPluginReloading";
 	}
 }

@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.FastReflection;
+using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
 using ZKWeb.Database;
@@ -56,12 +57,13 @@ namespace ZKWeb.ORM.Dapper {
 		/// Initialize<br/>
 		/// 初始化<br/>
 		/// </summary>
-		public DapperEntityMappingBuilder() {
+		public DapperEntityMappingBuilder(
+			IEnumerable<IDatabaseInitializeHandler> handlers,
+			IEnumerable<IEntityMappingProvider> providers) {
 			idMember = null;
 			ordinaryMembers = new List<MemberInfo>();
 			// Configure with registered providers
-			var providers = Application.Ioc.ResolveMany<IEntityMappingProvider<T>>();
-			foreach (var provider in providers) {
+			foreach (var provider in providers.OfType<IEntityMappingProvider<T>>()) {
 				provider.Configure(this);
 			}
 			// Ignore members that not mapped by this builder
@@ -80,7 +82,6 @@ namespace ZKWeb.ORM.Dapper {
 			}
 			// Set table name with registered handlers
 			var tableName = CustomTableName ?? typeof(T).Name;
-			var handlers = Application.Ioc.ResolveMany<IDatabaseInitializeHandler>();
 			foreach (var handler in handlers) {
 				handler.ConvertTableName(ref tableName);
 			}
@@ -101,7 +102,7 @@ namespace ZKWeb.ORM.Dapper {
 		/// </summary>
 		public void Id<TPrimaryKey>(
 			Expression<Func<T, TPrimaryKey>> memberExpression,
-			EntityMappingOptions options) {
+			EntityMappingOptions options = null) {
 			options = options ?? new EntityMappingOptions();
 			var idMap = base.Map(Expression.Lambda<Func<T, object>>(
 				Expression.Convert(memberExpression.Body, typeof(object)),
@@ -113,7 +114,7 @@ namespace ZKWeb.ORM.Dapper {
 				idMap = idMap.IsIdentity();
 			}
 			if (!string.IsNullOrEmpty(options.Column)) {
-				idMap = idMap.ToColumn(options.Column);
+				idMap.ToColumn(options.Column);
 			}
 			if (options.WithSerialization == true) {
 				TypeHandlerRegistrator.RegisterJsonSerializedType(typeof(TPrimaryKey));
@@ -130,13 +131,13 @@ namespace ZKWeb.ORM.Dapper {
 		/// </summary>
 		public void Map<TMember>(
 			Expression<Func<T, TMember>> memberExpression,
-			EntityMappingOptions options) {
+			EntityMappingOptions options = null) {
 			options = options ?? new EntityMappingOptions();
 			var memberMap = base.Map(Expression.Lambda<Func<T, object>>(
 				Expression.Convert(memberExpression.Body, typeof(object)),
 				memberExpression.Parameters));
 			if (!string.IsNullOrEmpty(options.Column)) {
-				memberMap = memberMap.ToColumn(options.Column);
+				memberMap.ToColumn(options.Column);
 			}
 			if (options.WithSerialization ?? false) {
 				TypeHandlerRegistrator.RegisterJsonSerializedType(typeof(TMember));
@@ -150,7 +151,7 @@ namespace ZKWeb.ORM.Dapper {
 		/// </summary>
 		public void References<TOther>(
 			Expression<Func<T, TOther>> memberExpression,
-			EntityMappingOptions options)
+			EntityMappingOptions options = null)
 			where TOther : class {
 			// log error only, some functions may not work
 			var logManager = Application.Ioc.Resolve<LogManager>();
@@ -163,7 +164,7 @@ namespace ZKWeb.ORM.Dapper {
 		/// </summary>
 		public void HasMany<TChild>(
 			Expression<Func<T, IEnumerable<TChild>>> memberExpression,
-			EntityMappingOptions options)
+			EntityMappingOptions options = null)
 			where TChild : class {
 			// log error only, some functions may not work
 			var logManager = Application.Ioc.Resolve<LogManager>();
